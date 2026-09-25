@@ -1,0 +1,19 @@
+{
+  "name": "agnks-backend",
+  "private": true,
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @agnks/api dev",
+    "build": "pnpm --filter @agnks/types build && pnpm --filter @agnks/api build",
+    "start": "pnpm --filter @agnks/api start:prod",
+    "test": "pnpm --filter @agnks/api test",
+    "lint": "pnpm --filter @agnks/api lint",
+    "prisma:generate": "pnpm --filter @agnks/api prisma:generate",
+    "prisma:migrate": "pnpm --filter @agnks/api prisma:migrate",
+    "docker:up": "docker compose -f docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f docker/docker-compose.yml down"
+  }
+}

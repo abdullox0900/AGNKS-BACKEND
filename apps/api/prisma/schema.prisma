@@ -1,0 +1,499 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum StaffRole {
+  cashier
+  branch_manager
+  root_admin
+  seo
+}
+
+enum Lang {
+  uz
+  ru
+}
+
+enum UserStatus {
+  active
+  blocked
+}
+
+enum ConsentType {
+  offer
+  privacy
+  marketing
+}
+
+enum StationStatus {
+  active
+  paused
+  closed
+}
+
+enum ShiftStatus {
+  open
+  closed
+}
+
+enum ReceiptStatus {
+  applied
+  pending_review
+  rejected
+}
+
+enum SpendStatus {
+  applied
+  reversed
+}
+
+enum LedgerType {
+  earn
+  spend
+  reverse
+  adjust
+  expire
+}
+
+enum LedgerRefType {
+  receipt
+  spend
+  dispute
+  manual
+  system
+}
+
+enum PromotionStatus {
+  scheduled
+  active
+  ended
+  cancelled
+}
+
+enum DisputeRefType {
+  receipt
+  spend
+}
+
+enum DisputeStatus {
+  open
+  upheld
+  reversed
+  adjusted
+}
+
+enum FeedbackKind {
+  suggestion
+  complaint
+}
+
+enum FeedbackStatus {
+  open
+  resolved
+}
+
+enum OutboxStatus {
+  pending
+  sent
+  failed
+  dead
+}
+
+// ---------- Core ----------
+
+model User {
+  id         String     @id @default(uuid())
+  phone      String?    @unique
+  tgUserId   BigInt?    @unique @map("tg_user_id")
+  firstName  String     @map("first_name")
+  lang       Lang       @default(uz)
+  status     UserStatus @default(active)
+  registeredAt DateTime? @map("registered_at")
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  roles       UserRole[]
+  credentials StaffCredentials?
+  consents    Consent[]
+  card        Card?
+
+  auditActions AuditLog[] @relation("audit_actor")
+
+  @@map("users")
+}
+
+model UserRole {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  role        StaffRole
+  stationId   String?   @map("station_id")
+  terminalIds String[]  @map("terminal_ids")
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  station Station? @relation(fields: [stationId], references: [id])
+
+  @@unique([userId, role, stationId])
+  @@map("user_roles")
+}
+
+model StaffCredentials {
+  userId          String    @id @map("user_id")
+  passwordHash    String?   @map("password_hash")
+  pinHash         String?   @map("pin_hash")
+  // Plaintext copy of the cashier's current PIN, kept only so a manager/SEO can look it
+  // up again later (explicit product decision — cashiers forget it and there's no
+  // self-serve recovery flow). pinHash above is still what authenticates logins.
+  pin             String?   @map("pin")
+  totpSecret      String?   @map("totp_secret")
+  recoveryCodeHash String?  @map("recovery_code_hash")
+  failedAttempts  Int       @default(0) @map("failed_attempts")
+  lockedUntil     DateTime? @map("locked_until")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("staff_credentials")
+}
+
+model Consent {
+  id         String      @id @default(uuid())
+  userId     String      @map("user_id")
+  type       ConsentType
+  version    String
+  acceptedAt DateTime    @default(now()) @map("accepted_at")
+  revokedAt  DateTime?   @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("consents")
+}
+
+model Card {
+  id             String   @id @default(uuid())
+  userId         String   @unique @map("user_id")
+  number         String   @unique
+  cachedBalance  BigInt   @default(0) @map("cached_balance")
+  pendingAmount  BigInt   @default(0) @map("pending_amount")
+  blocked        Boolean  @default(false)
+  lastActivityAt DateTime? @map("last_activity_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  receipts         Receipt[]
+  spendOperations  SpendOperation[]
+  ledgerEntries    BonusLedger[]
+  disputes         Dispute[]
+  feedback         Feedback[]
+  photos           ReceiptPhoto[]
+
+  @@map("cards")
+}
+
+// ---------- Stations ----------
+
+model Station {
+  id        String        @id @default(uuid())
+  name      String
+  address   String
+  lat       Decimal       @db.Decimal(9, 6)
+  lng       Decimal       @db.Decimal(9, 6)
+  radiusM   Int           @default(300) @map("radius_m")
+  status    StationStatus @default(active)
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  terminals   Terminal[]
+  userRoles   UserRole[]
+  shifts      Shift[]
+  receipts    Receipt[]
+  spendOps    SpendOperation[]
+  promotions  Promotion[]
+
+  @@map("stations")
+}
+
+model Terminal {
+  id        String  @id @default(uuid())
+  stationId String  @map("station_id")
+  code      String  @unique
+  label     String
+  active    Boolean @default(true)
+
+  station  Station   @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  receipts Receipt[]
+
+  @@index([stationId])
+  @@map("terminals")
+}
+
+// ---------- Shifts ----------
+
+model Shift {
+  id             String      @id @default(uuid())
+  stationId      String      @map("station_id")
+  cashierId      String      @map("cashier_id")
+  terminalIds    String[]    @map("terminal_ids")
+  openedAt       DateTime    @default(now()) @map("opened_at")
+  closedAt       DateTime?   @map("closed_at")
+  declaredTotal  BigInt?     @map("declared_total")
+  claimsTotal    BigInt?     @map("claims_total")
+  status         ShiftStatus @default(open)
+  flagReason     String?     @map("flag_reason")
+
+  station  Station          @relation(fields: [stationId], references: [id])
+  receipts Receipt[]
+  spendOps SpendOperation[]
+
+  @@index([stationId, status])
+  @@index([cashierId, status])
+  @@map("shifts")
+}
+
+// ---------- Receipts (bonus yig'ish) ----------
+
+model Receipt {
+  id             String        @id @default(uuid())
+  cardId         String        @map("card_id")
+  stationId      String        @map("station_id")
+  terminalId     String        @map("terminal_id")
+  qrT            String        @map("qr_t")
+  qrR            String        @map("qr_r")
+  qrC            String        @map("qr_c")
+  qrS            String        @map("qr_s")
+  receiptAt      DateTime      @map("receipt_at")
+  amount         BigInt
+  rateBps        Int           @map("rate_bps")
+  promotionId    String?       @map("promotion_id")
+  bonus          BigInt
+  photoId        String?       @map("photo_id")
+  taxAmount      BigInt?       @map("tax_amount")
+  taxVerified    Boolean       @default(false) @map("tax_verified")
+  taxCheckedAt   DateTime?     @map("tax_checked_at")
+  clientLat      Decimal?      @db.Decimal(9, 6) @map("client_lat")
+  clientLng      Decimal?      @db.Decimal(9, 6) @map("client_lng")
+  distanceM      Int?          @map("distance_m")
+  status         ReceiptStatus @default(applied)
+  reviewReasons  String[]      @map("review_reasons")
+  reviewedBy     String?       @map("reviewed_by")
+  reviewedAt     DateTime?     @map("reviewed_at")
+  reviewNote     String?       @map("review_note")
+  shiftId        String?       @map("shift_id")
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  card      Card           @relation(fields: [cardId], references: [id])
+  station   Station        @relation(fields: [stationId], references: [id])
+  terminal  Terminal       @relation(fields: [terminalId], references: [id])
+  promotion Promotion?     @relation(fields: [promotionId], references: [id])
+  photo     ReceiptPhoto?  @relation(fields: [photoId], references: [id], onDelete: SetNull)
+  shift     Shift?         @relation(fields: [shiftId], references: [id])
+  // No FK relation for bonus_ledger/disputes here: `ref_id` there is polymorphic
+  // (receipt OR spend OR dispute OR manual OR system per ref_type) and a plain
+  // foreign key can't express "references exactly one of several tables".
+
+  @@unique([qrT, qrR, qrC])
+  @@index([cardId, createdAt(sort: Desc)])
+  @@index([stationId, receiptAt])
+  @@index([status])
+  @@index([shiftId])
+  @@map("receipts")
+}
+
+model ReceiptPhoto {
+  id          String    @id @default(uuid())
+  cardId      String    @map("card_id")
+  storageKey  String    @map("storage_key")
+  width       Int
+  height      Int
+  sizeBytes   Int       @map("size_bytes")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  deleteAfter DateTime  @map("delete_after")
+
+  card     Card      @relation(fields: [cardId], references: [id])
+  receipts Receipt[]
+
+  @@index([deleteAfter])
+  @@map("receipt_photos")
+}
+
+// ---------- Spend ----------
+
+model SpendOperation {
+  id            String      @id @default(uuid())
+  cardId        String      @map("card_id")
+  cashierId     String      @map("cashier_id")
+  stationId     String      @map("station_id")
+  shiftId       String      @map("shift_id")
+  amount        BigInt
+  status        SpendStatus @default(applied)
+  reversedBy    String?     @map("reversed_by")
+  reversedAt    DateTime?   @map("reversed_at")
+  reverseReason String?     @map("reverse_reason")
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  card    Card          @relation(fields: [cardId], references: [id])
+  station Station       @relation(fields: [stationId], references: [id])
+  shift   Shift         @relation(fields: [shiftId], references: [id])
+
+  @@index([cashierId, createdAt])
+  @@index([shiftId])
+  @@index([cardId, createdAt(sort: Desc)])
+  @@map("spend_operations")
+}
+
+// ---------- Ledger ----------
+
+model BonusLedger {
+  id           String        @id @default(uuid())
+  cardId       String        @map("card_id")
+  delta        BigInt
+  type         LedgerType
+  balanceAfter BigInt        @map("balance_after")
+  refType      LedgerRefType @map("ref_type")
+  refId        String        @map("ref_id")
+  actorId      String?       @map("actor_id")
+  createdAt    DateTime      @default(now()) @map("created_at")
+
+  card Card @relation(fields: [cardId], references: [id])
+  // refId is polymorphic (see refType) — deliberately not a foreign key.
+
+  @@index([cardId, createdAt(sort: Desc)])
+  @@index([refType, refId])
+  @@map("bonus_ledger")
+}
+
+// ---------- Rules ----------
+
+model BonusSettings {
+  id          Int      @id @default(1)
+  baseRateBps Int      @map("base_rate_bps")
+  updatedBy   String?  @map("updated_by")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("bonus_settings")
+}
+
+model Promotion {
+  id          String          @id @default(uuid())
+  name        String
+  rateBps     Int             @map("rate_bps")
+  stationIds  String[]        @map("station_ids")
+  startsAt    DateTime        @map("starts_at")
+  endsAt      DateTime        @map("ends_at")
+  reason      String
+  status      PromotionStatus @default(scheduled)
+  createdBy   String          @map("created_by")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  cancelledBy String?         @map("cancelled_by")
+  cancelledAt DateTime?       @map("cancelled_at")
+
+  stations Station[]
+  receipts Receipt[]
+
+  @@index([startsAt, endsAt])
+  @@map("promotions")
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedBy String?  @map("updated_by")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
+
+// ---------- Disputes ----------
+
+model Dispute {
+  id             String         @id @default(uuid())
+  cardId         String         @map("card_id")
+  refType        DisputeRefType @map("ref_type")
+  refId          String         @map("ref_id")
+  claimedAmount  BigInt?        @map("claimed_amount")
+  comment        String?
+  status         DisputeStatus  @default(open)
+  resolvedBy     String?        @map("resolved_by")
+  resolvedAt     DateTime?      @map("resolved_at")
+  resolutionNote String?        @map("resolution_note")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  card Card @relation(fields: [cardId], references: [id])
+  // refId is polymorphic (see refType) — deliberately not a foreign key.
+
+  @@index([cardId])
+  @@index([refType, refId])
+  @@map("disputes")
+}
+
+// General feedback not tied to a specific receipt/spend — "taklif yoki shikoyat"
+// the client sends from a dedicated webapp page, distinct from a Dispute (which
+// always disputes a specific transaction's amount).
+model Feedback {
+  id             String         @id @default(uuid())
+  cardId         String         @map("card_id")
+  kind           FeedbackKind
+  message        String
+  status         FeedbackStatus @default(open)
+  resolvedBy     String?        @map("resolved_by")
+  resolvedAt     DateTime?      @map("resolved_at")
+  resolutionNote String?        @map("resolution_note")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  card Card @relation(fields: [cardId], references: [id])
+
+  @@index([cardId])
+  @@index([status])
+  @@map("feedback")
+}
+
+// ---------- Audit / Outbox ----------
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?  @map("actor_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  before     Json?
+  after      Json?
+  ip         String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  actor User? @relation("audit_actor", fields: [actorId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([actorId, createdAt])
+  @@map("audit_log")
+}
+
+model Outbox {
+  id            String       @id @default(uuid())
+  kind          String
+  payload       Json
+  status        OutboxStatus @default(pending)
+  attempts      Int          @default(0)
+  nextAttemptAt DateTime     @default(now()) @map("next_attempt_at")
+  lastError     String?      @map("last_error")
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  @@index([status, nextAttemptAt])
+  @@map("outbox")
+}
+
+model IdempotencyKey {
+  key        String   @id
+  method     String
+  path       String
+  bodyHash   String   @map("body_hash")
+  statusCode Int      @map("status_code")
+  response   Json
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("idempotency_keys")
+}
