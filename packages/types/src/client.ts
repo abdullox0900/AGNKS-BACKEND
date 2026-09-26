@@ -10,6 +10,13 @@ export type RegisterDto = z.infer<typeof registerSchema>;
 export const updateMeSchema = z.object({
   firstName: z.string().trim().min(2).max(40).optional(),
   lang: z.enum(LANGS).optional(),
+  // Manual fallback for when the bot's contact-share flow can't reach the client
+  // (e.g. the bot webhook is unreachable) — normally the phone only ever comes
+  // through the bot (TZ-4 §7.1); this is a deliberate, explicit exception.
+  phone: z
+    .string()
+    .regex(/^\+998\d{9}$/)
+    .optional(),
 });
 export type UpdateMeDto = z.infer<typeof updateMeSchema>;
 
