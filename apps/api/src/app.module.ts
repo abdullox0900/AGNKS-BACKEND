@@ -4,6 +4,7 @@ import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 
+import { validateEnv } from '@/config/env.validation';
 import { GlobalExceptionFilter } from '@/common/filters/global-exception.filter';
 import { ResponseInterceptor } from '@/common/interceptors/response.interceptor';
 import { TimeoutInterceptor } from '@/common/interceptors/timeout.interceptor';
@@ -33,7 +34,7 @@ import { HealthController } from '@/modules/health/health.controller';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]), // global 100/daq per IP (TZ-4 §11)
 
     PrismaModule,

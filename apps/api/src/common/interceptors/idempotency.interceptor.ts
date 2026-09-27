@@ -4,12 +4,14 @@ import {
   Injectable,
   NestInterceptor,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { createHash } from 'node:crypto';
 import { Observable, firstValueFrom, from } from 'rxjs';
 import { AppError } from '@agnks/types';
 import { RedisService } from '@/infra/redis/redis.service';
 import { PrismaService } from '@/infra/prisma/prisma.service';
+import { SKIP_IDEMPOTENCY_KEY } from '@/common/decorators/skip-idempotency.decorator';
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const TTL_SECONDS = 24 * 60 * 60;
@@ -25,6 +27,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
   constructor(
     private readonly redis: RedisService,
     private readonly prisma: PrismaService,
+    private readonly reflector: Reflector,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
@@ -34,7 +37,11 @@ export class IdempotencyInterceptor implements NestInterceptor {
   private async run(context: ExecutionContext, next: CallHandler): Promise<unknown> {
     const request = context.switchToHttp().getRequest<Request>();
 
-    if (!WRITE_METHODS.has(request.method)) {
+    const skip = this.reflector.getAllAndOverride<boolean>(SKIP_IDEMPOTENCY_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (skip || !WRITE_METHODS.has(request.method)) {
       return firstValueFrom(next.handle());
     }
 
