@@ -20,6 +20,10 @@ export class UsersService {
     if (!user || !user.card) throw new AppError('NOT_FOUND');
 
     const registered = !!user.registeredAt;
+    const marketingConsent = await this.prisma.consent.findFirst({
+      where: { userId, type: 'marketing', revokedAt: null },
+      select: { id: true },
+    });
 
     const [minAmount, maxAmount, spendMin, spendMax] = await Promise.all([
       this.settings.get('receipt.min_amount'),
@@ -42,6 +46,7 @@ export class UsersService {
       receiptMaxAmount: maxAmount,
       spendMinAmount: spendMin,
       spendMaxAmount: spendMax,
+      marketingOptIn: !!marketingConsent,
     };
   }
 

@@ -66,6 +66,7 @@ export class RulesController {
       endsAt: new Date(dto.endsAt),
       reason: dto.reason,
       createdBy: actor.userId,
+      notifyAt: dto.notifyAt ? new Date(dto.notifyAt) : null,
     });
   }
 

@@ -1,7 +1,7 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject, Logger } from '@nestjs/common';
 import type { Job } from 'bullmq';
-import type { Bot } from 'grammy';
+import { GrammyError, type Bot } from 'grammy';
 import { QUEUE_NAMES } from '@/infra/queue/queue.constants';
 import { CLIENT_BOT, STAFF_BOT } from '@/infra/telegram/telegram.constants';
 import { PrismaService } from '@/infra/prisma/prisma.service';
@@ -68,6 +68,12 @@ export class OutboxProcessor extends WorkerHost {
         this.logger.warn(`sendMessage failed: ${(failure.reason as Error)?.message ?? failure.reason}`);
       }
 
+      if (failures.length === results.length && failures.every((f) => isBlocked(f.reason))) {
+        // 403: the user blocked the bot / deleted the chat — retrying can't help.
+        await this.prisma.outbox.update({ where: { id: row.id }, data: { status: 'dead', lastError: 'blocked_by_user' } });
+        return;
+      }
+
       if (failures.length === results.length) {
         // Every recipient failed — treat as a full delivery failure so it retries.
         throw new Error(`all_recipients_failed: ${failures[0]?.reason?.message ?? 'unknown'}`);
@@ -90,6 +96,7 @@ export class OutboxProcessor extends WorkerHost {
   }
 
   private async resolveRecipients(kind: OutboxKind, payload: Record<string, unknown>): Promise<number[]> {
+    if (typeof payload.tgUserId === 'number') return [payload.tgUserId];
     if (kind.startsWith('client.')) {
       const cardId = payload.cardId as string | undefined;
       if (!cardId) return [];
@@ -109,6 +116,10 @@ export class OutboxProcessor extends WorkerHost {
     });
     return roles.map((r) => r.user.tgUserId).filter((id): id is bigint => id !== null).map(Number);
   }
+}
+
+function isBlocked(reason: unknown): boolean {
+  return reason instanceof GrammyError && reason.error_code === 403;
 }
 
 function backoffMs(attempt: number): number {

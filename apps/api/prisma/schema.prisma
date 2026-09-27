@@ -99,6 +99,13 @@ enum FeedbackStatus {
   resolved
 }
 
+enum BroadcastStatus {
+  scheduled
+  sending
+  sent
+  cancelled
+}
+
 enum OutboxStatus {
   pending
   sent
@@ -496,4 +503,26 @@ model IdempotencyKey {
 
   @@index([createdAt])
   @@map("idempotency_keys")
+}
+
+/// Client-facing announcement from the dashboard: pushed via the client bot to
+/// marketing-consented clients at `sendAt`, and listed in the webapp "Xabarlar" feed
+/// once sent. `promotionId` links auto-generated promo announcements so cancelling
+/// the promotion also cancels a not-yet-sent announcement.
+model Broadcast {
+  id             String          @id @default(uuid())
+  textUz         String          @map("text_uz")
+  textRu         String?         @map("text_ru")
+  sendAt         DateTime        @map("send_at")
+  status         BroadcastStatus @default(scheduled)
+  promotionId    String?         @map("promotion_id")
+  recipientCount Int             @default(0) @map("recipient_count")
+  createdBy      String          @map("created_by")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  sentAt         DateTime?       @map("sent_at")
+  cancelledAt    DateTime?       @map("cancelled_at")
+
+  @@index([status, sendAt])
+  @@index([promotionId])
+  @@map("broadcasts")
 }

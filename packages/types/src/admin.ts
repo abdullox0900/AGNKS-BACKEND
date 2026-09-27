@@ -90,9 +90,23 @@ export const createPromotionSchema = z
     startsAt: z.string().datetime(),
     endsAt: z.string().datetime(),
     reason: z.string().trim().min(2).max(300),
+    /** when to announce it to clients (bot + webapp feed); omitted/null = don't announce */
+    notifyAt: z.string().datetime().nullable().optional(),
   })
   .refine((v) => new Date(v.endsAt) > new Date(v.startsAt), { message: 'endsAt must be after startsAt' });
 export type CreatePromotionDto = z.infer<typeof createPromotionSchema>;
+
+// Telegram caps a message at 4096 chars; leave headroom.
+const broadcastTextSchema = z.string().trim().min(2).max(3500);
+
+export const createBroadcastSchema = z.object({
+  textUz: broadcastTextSchema,
+  /** optional — Russian-speaking clients get textUz when missing */
+  textRu: broadcastTextSchema.nullable().optional(),
+  /** omitted/null or in the past = send right away */
+  sendAt: z.string().datetime().nullable().optional(),
+});
+export type CreateBroadcastDto = z.infer<typeof createBroadcastSchema>;
 
 export const promotionStatusFilterSchema = z.object({
   status: z.enum(PROMOTION_STATUS).optional(),

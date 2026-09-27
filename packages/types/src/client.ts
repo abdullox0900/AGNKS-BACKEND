@@ -40,6 +40,8 @@ export const meResponseSchema = z.object({
   receiptMaxAmount: z.number().int(),
   spendMinAmount: z.number().int(),
   spendMaxAmount: z.number().int(),
+  /** client opted in to promo messages from the bot (active marketing consent) */
+  marketingOptIn: z.boolean(),
 });
 export type MeResponse = z.infer<typeof meResponseSchema>;
 

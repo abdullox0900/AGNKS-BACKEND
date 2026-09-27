@@ -9,6 +9,7 @@ export const QUEUE_NAMES = {
   anomalyScan: 'anomaly.scan',
   photosCleanup: 'photos.cleanup',
   idempotencyCleanup: 'idempotency.cleanup',
+  broadcastDispatch: 'broadcast.dispatch',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];

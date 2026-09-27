@@ -30,6 +30,7 @@ import { NotificationsModule } from '@/modules/notifications/notifications.modul
 import { AnalyticsModule } from '@/modules/analytics/analytics.module';
 import { AuditModule } from '@/modules/audit/audit.module';
 import { BotModule } from '@/modules/bot/bot.module';
+import { BroadcastsModule } from '@/modules/broadcasts/broadcasts.module';
 import { HealthController } from '@/modules/health/health.controller';
 
 @Module({
@@ -57,6 +58,7 @@ import { HealthController } from '@/modules/health/health.controller';
     AnalyticsModule,
     AuditModule,
     BotModule,
+    BroadcastsModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AppError, type PromotionStatus } from '@agnks/types';
 import { PrismaService } from '@/infra/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
+import { BroadcastsService } from '@/modules/broadcasts/broadcasts.service';
 import { SettingsService } from './settings.service';
 
 @Injectable()
@@ -10,6 +11,7 @@ export class PromotionsService {
     private readonly prisma: PrismaService,
     private readonly settings: SettingsService,
     private readonly audit: AuditService,
+    private readonly broadcasts: BroadcastsService,
   ) {}
 
   async list(status?: PromotionStatus) {
@@ -27,6 +29,8 @@ export class PromotionsService {
     endsAt: Date;
     reason: string;
     createdBy: string;
+    /** announce to clients at this time (bot + webapp feed); null = don't */
+    notifyAt?: Date | null;
   }) {
     const maxRateBps = await this.settings.get('promotion.max_rate_bps');
     if (input.rateBps > maxRateBps) {
@@ -53,6 +57,10 @@ export class PromotionsService {
       after: promo,
     });
 
+    if (input.notifyAt) {
+      await this.broadcasts.createForPromotion(promo, input.notifyAt, input.createdBy);
+    }
+
     return toPromotionDto(promo);
   }
 
@@ -64,6 +72,7 @@ export class PromotionsService {
       where: { id },
       data: { cancelledAt: new Date(), cancelledBy: actorId },
     });
+    await this.broadcasts.cancelForPromotion(id);
 
     await this.audit.record({
       actorId,

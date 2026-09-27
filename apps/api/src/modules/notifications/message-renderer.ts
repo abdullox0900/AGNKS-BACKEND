@@ -15,6 +15,8 @@ export function renderMessage(kind: OutboxKind, payload: Record<string, unknown>
       return `📩 Shikoyatingiz ko'rib chiqildi: ${resolutionText(payload.resolution)}.`;
     case 'client.bonus_expiry_warning':
       return `⚠️ ${formatMoney(payload.amount)} bonusingiz ${payload.days} kundan keyin kuyadi.`;
+    case 'client.broadcast':
+      return String(payload.text ?? '');
     case 'client.bonus_expired':
       return `🔥 Muddati o'tgani uchun bonus balansingiz kuydi.`;
     case 'staff.shift_flagged':

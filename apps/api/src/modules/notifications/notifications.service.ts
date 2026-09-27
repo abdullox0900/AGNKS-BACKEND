@@ -10,6 +10,7 @@ export type OutboxKind =
   | 'client.dispute_resolved'
   | 'client.bonus_expiry_warning'
   | 'client.bonus_expired'
+  | 'client.broadcast'
   | 'staff.shift_flagged'
   | 'staff.shift_forgotten'
   | 'staff.anomaly'
