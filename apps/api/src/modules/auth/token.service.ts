@@ -45,7 +45,8 @@ export class TokenService {
     try {
       payload = this.jwt.verify<StaffTokenPayload>(token, { secret });
     } catch {
-      throw new AppError('AUTH_FORBIDDEN', { reason: 'invalid_token' });
+      // 401 (not 403) so the webapps' interceptors refresh the access token and retry.
+      throw new AppError('AUTH_TOKEN_INVALID', { reason: 'invalid_token' });
     }
     if (payload.type !== expectedType) {
       throw new AppError('AUTH_FORBIDDEN', { reason: 'wrong_token_type' });

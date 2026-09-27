@@ -25,7 +25,7 @@ export class StaffAuthGuard implements CanActivate {
         : null;
 
     if (!actor) {
-      throw new AppError('AUTH_FORBIDDEN', { reason: 'missing_credentials' });
+      throw new AppError('AUTH_TOKEN_INVALID', { reason: 'missing_credentials' });
     }
 
     request.actor = actor;

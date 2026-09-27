@@ -7,6 +7,8 @@ export const ERROR_CODES = [
   'AUTH_2FA_REQUIRED',
   'AUTH_INVALID_CREDENTIALS',
   'AUTH_LOCKED',
+  /** missing, malformed or expired access token — the client should refresh and retry */
+  'AUTH_TOKEN_INVALID',
   'CARD_BLOCKED',
   'RECEIPT_QR_INVALID',
   'RECEIPT_TERMINAL_UNKNOWN',
@@ -45,6 +47,7 @@ export const ERROR_HTTP_STATUS: Record<ErrorCode, number> = {
   AUTH_2FA_REQUIRED: 401,
   AUTH_INVALID_CREDENTIALS: 401,
   AUTH_LOCKED: 423,
+  AUTH_TOKEN_INVALID: 401,
   CARD_BLOCKED: 403,
   RECEIPT_QR_INVALID: 400,
   RECEIPT_TERMINAL_UNKNOWN: 422,

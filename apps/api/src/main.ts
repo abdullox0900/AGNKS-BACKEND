@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
@@ -33,7 +34,11 @@ async function bootstrap() {
   const useDevHttps = process.env.DEV_HTTPS === 'true';
   const httpsOptions = useDevHttps ? loadDevHttpsOptions(logger) : undefined;
 
-  const app = await NestFactory.create(AppModule, { bufferLogs: true, httpsOptions });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true, httpsOptions });
+  // Behind nginx every request arrives from 127.0.0.1 — without this, req.ip (and so the
+  // per-IP rate limit) would be one shared bucket for every client, cashier and dashboard
+  // user at once. Trust exactly one proxy hop and take the client IP from X-Forwarded-For.
+  app.set('trust proxy', 1);
   const config = app.get(ConfigService);
 
   // The API and its frontends (client webapp, cashier webapp, dashboard) intentionally
