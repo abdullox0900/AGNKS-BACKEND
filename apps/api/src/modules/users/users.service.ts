@@ -97,6 +97,45 @@ export class UsersService {
   }
 
   /**
+   * "Chiqish" in the Mini App: Telegram identity can't be signed out, so this
+   * resets registration instead — phone/registeredAt are cleared and the client
+   * goes through onboarding again (e.g. to use another number). The card,
+   * balance and history stay attached to this Telegram account.
+   */
+  async logout(userId: string): Promise<{ registered: false }> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { phone: null, registeredAt: null },
+    });
+    return { registered: false };
+  }
+
+  /** Client-facing list of running + upcoming promotions (cancelled/ended are hidden). */
+  async promotions() {
+    const now = new Date();
+    const rows = await this.prisma.promotion.findMany({
+      where: { cancelledAt: null, endsAt: { gte: now } },
+      orderBy: { startsAt: 'asc' },
+      take: 50,
+    });
+    const stationIds = [...new Set(rows.flatMap((p) => p.stationIds))];
+    const stations = stationIds.length
+      ? await this.prisma.station.findMany({ where: { id: { in: stationIds } }, select: { id: true, name: true } })
+      : [];
+    const nameById = new Map(stations.map((s) => [s.id, s.name]));
+    return rows.map((p) => ({
+      id: p.id,
+      name: p.name,
+      percent: p.rateBps / 100,
+      startsAt: p.startsAt.toISOString(),
+      endsAt: p.endsAt.toISOString(),
+      active: p.startsAt <= now,
+      // empty = whole network
+      stations: p.stationIds.map((id) => nameById.get(id)).filter((n): n is string => !!n),
+    }));
+  }
+
+  /**
    * Full registration done entirely inside the bot conversation (name, then a
    * shared contact) — by the time the client opens the Mini App, `registered`
    * is already true and the in-app onboarding pages are skipped. Creates the

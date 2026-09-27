@@ -38,6 +38,16 @@ export class ClientMeController {
     return this.users.rate(stationId);
   }
 
+  @Post('logout')
+  logout(@CurrentClient() actor: ClientActor) {
+    return this.users.logout(actor.userId);
+  }
+
+  @Get('promotions')
+  promotions() {
+    return this.users.promotions();
+  }
+
   @Patch('marketing')
   async setMarketing(
     @CurrentClient() actor: ClientActor,
