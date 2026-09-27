@@ -6,6 +6,42 @@ import type { ParsedReceiptQr } from './qr-parser';
 export interface SoliqCheckResult {
   verified: boolean;
   amount: bigint | null;
+  /** full soliq.uz payment record, when one came back */
+  data: Record<string, unknown> | null;
+  /** why it couldn't be used, when verified is false */
+  reason?: SoliqRejectReason;
+}
+
+export type SoliqRejectReason = 'tax_unverified' | 'tax_mismatch' | 'tax_refund';
+
+/**
+ * Decides whether a soliq.uz payment record can be trusted for this QR and what the
+ * receipt total is. Used for both our own lookup and the record the webapp fetched on
+ * the client's phone — the latter must match the QR we parsed ourselves (terminal,
+ * receipt number, date), so a record for some other receipt can't be replayed.
+ */
+export function evaluateSoliqData(data: Record<string, unknown>, parsed: ParsedReceiptQr): SoliqCheckResult {
+  const str = (v: unknown) => (v === null || v === undefined ? '' : String(v).trim());
+
+  const sameTerminal = str(data.terminalId) === parsed.t;
+  const sameNumber = str(data.paymentNo).replace(/^0+/, '') === parsed.r.replace(/^0+/, '');
+  // soliq.uz: "25.09.2026 17:07:21"; QR `c`: "20260925170721"
+  const m = /^(\d{2})\.(\d{2})\.(\d{4}) (\d{2}):(\d{2}):(\d{2})$/.exec(str(data.paymentDate));
+  const sameDate = !!m && `${m[3]}${m[2]}${m[1]}${m[4]}${m[5]}${m[6]}` === parsed.c;
+  if (!sameTerminal || !sameNumber || !sameDate) {
+    return { verified: false, amount: null, data, reason: 'tax_mismatch' };
+  }
+
+  if (Number(data.isRefund) === 1) {
+    return { verified: false, amount: null, data, reason: 'tax_refund' };
+  }
+
+  const cash = Number(data.cashTotal ?? 0);
+  const card = Number(data.cardTotal ?? 0);
+  if (!Number.isFinite(cash) || !Number.isFinite(card) || cash < 0 || card < 0) {
+    return { verified: false, amount: null, data, reason: 'tax_mismatch' };
+  }
+  return { verified: true, amount: BigInt(Math.round(cash + card)), data };
 }
 
 const API_URL = 'https://new-ofd.soliq.uz/api/payment';
@@ -30,12 +66,13 @@ export class SoliqFetchService {
 
   constructor(private readonly config: ConfigService) {}
 
-  async fetchAmount(_checkUrl: string, parsed?: ParsedReceiptQr): Promise<SoliqCheckResult> {
+  /** `timeoutMs` overrides the configured timeout (shorter when the webapp already sent its own lookup). */
+  async fetchAmount(_checkUrl: string, parsed?: ParsedReceiptQr, timeoutMs?: number): Promise<SoliqCheckResult> {
     if (!this.config.get<boolean>('SOLIQ_FETCH_ENABLED', true) || !parsed) {
-      return { verified: false, amount: null };
+      return { verified: false, amount: null, data: null, reason: 'tax_unverified' };
     }
 
-    const timeoutMs = this.config.get<number>('SOLIQ_FETCH_TIMEOUT_MS', 4000);
+    timeoutMs ??= Number(this.config.get('SOLIQ_FETCH_TIMEOUT_MS', 4000));
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -65,19 +102,18 @@ export class SoliqFetchService {
 
       const body = (await res.json().catch(() => null)) as {
         success?: boolean;
-        data?: { cashTotal?: number; cardTotal?: number };
+        data?: Record<string, unknown>;
       } | null;
 
       if (!res.ok || !body?.success || !body.data) {
         this.logger.warn(`soliq.uz payment lookup failed (${res.status}) for terminal ${parsed.t}/${parsed.r}`);
-        return { verified: false, amount: null };
+        return { verified: false, amount: null, data: null, reason: 'tax_unverified' };
       }
 
-      const total = (body.data.cashTotal ?? 0) + (body.data.cardTotal ?? 0);
-      return { verified: true, amount: BigInt(Math.round(total)) };
+      return evaluateSoliqData(body.data, parsed);
     } catch (err) {
       this.logger.warn(`soliq.uz fetch failed for terminal ${parsed.t}/${parsed.r}: ${(err as Error).message}`);
-      return { verified: false, amount: null };
+      return { verified: false, amount: null, data: null, reason: 'tax_unverified' };
     } finally {
       clearTimeout(timer);
     }

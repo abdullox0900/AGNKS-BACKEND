@@ -7,6 +7,8 @@ export const SETTINGS_DEFAULTS = {
   'receipt.max_age_min': 15 * 24 * 60,
   'receipt.min_amount': 10_000,
   'receipt.max_amount': 3_000_000,
+  /** receipts at or above this amount raise a dashboard alert */
+  'receipt.large_alert_amount': 5_000_000,
   'location.policy': 'off' as const,
   'review.amount_threshold': 1_000_000,
   'review.daily_receipts_threshold': 3,
@@ -30,6 +32,7 @@ export const settingsSchemas = {
   'receipt.max_age_min': z.number().int().min(1),
   'receipt.min_amount': z.number().int().min(0),
   'receipt.max_amount': z.number().int().min(0),
+  'receipt.large_alert_amount': z.number().int().min(0),
   'location.policy': z.enum(LOCATION_POLICY),
   'review.amount_threshold': z.number().int().min(0),
   'review.daily_receipts_threshold': z.number().int().min(0),

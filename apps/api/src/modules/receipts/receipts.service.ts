@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { AppError, type SubmitReceiptDto, type SubmitReceiptResponse } from '@agnks/types';
 import { PrismaService } from '@/infra/prisma/prisma.service';
 import { LedgerService } from '@/modules/ledger/ledger.service';
@@ -7,10 +8,13 @@ import { RateResolverService } from '@/modules/rules/rate-resolver.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { distanceMeters } from '@/common/lib/geo';
 import { calcBonus } from '@/common/lib/money';
-import { SoliqFetchService } from './soliq-fetch.service';
+import { SoliqFetchService, evaluateSoliqData } from './soliq-fetch.service';
 import { buildSoliqUrl, parseManualReceiptFields, parseReceiptQr, parseReceiptTimestamp, type ParsedReceiptQr } from './qr-parser';
 
 const FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
+// When the webapp already sent soliq.uz's record, don't make the client wait long on our
+// own lookup (it times out from servers outside Uzbekistan anyway).
+const CLIENT_DATA_SERVER_TIMEOUT_MS = 1500;
 
 interface PreCheckResult {
   parsed: ParsedReceiptQr;
@@ -65,16 +69,27 @@ export class ReceiptsService {
 
     const { rateBps, promotionId } = await this.rateResolver.resolve(check.station.id, check.receiptAt);
 
-    // The client never supplies an amount or a photo — soliq.uz's fiscal-check page is the
-    // sole source of truth for the receipt total. If it can't be confirmed right now (the
-    // service is down, or the page didn't parse), the receipt waits for a reviewer to check
-    // the link by hand and enter the real amount, instead of trusting anything client-side.
-    const tax = await this.soliq.fetchAmount(parsed.url ?? buildSoliqUrl(parsed), parsed);
+    // The receipt total only ever comes from soliq.uz's payment record — never typed in.
+    // Our own lookup goes first; soliq.uz doesn't answer servers outside Uzbekistan, so the
+    // webapp also fetches the record from the client's phone and sends it along
+    // (dto.soliqData). That one is accepted only if it matches the QR we parsed ourselves.
+    // If neither works, the receipt waits for a reviewer.
+    const serverTax = await this.soliq.fetchAmount(
+      parsed.url ?? buildSoliqUrl(parsed),
+      parsed,
+      dto.soliqData ? CLIENT_DATA_SERVER_TIMEOUT_MS : undefined,
+    );
+    let tax = serverTax;
+    let taxSource: 'server' | 'client' | null = serverTax.verified ? 'server' : null;
+    if (!serverTax.verified && dto.soliqData) {
+      tax = evaluateSoliqData(dto.soliqData, parsed);
+      taxSource = 'client';
+    }
     const verified = tax.verified && tax.amount !== null;
     const amount = verified ? tax.amount! : 0n;
     const bonus = verified ? calcBonus(amount, rateBps) : 0n;
     const status = verified ? 'applied' : 'pending_review';
-    const reviewReasons = verified ? [] : ['tax_unverified'];
+    const reviewReasons = verified ? [] : [tax.reason ?? 'tax_unverified'];
 
     const result = await this.prisma.$transaction(async (tx) => {
       const receipt = await tx.receipt.create({
@@ -94,6 +109,8 @@ export class ReceiptsService {
           taxAmount: tax.amount,
           taxVerified: tax.verified,
           taxCheckedAt: tax.verified ? new Date() : null,
+          taxData: (tax.data ?? undefined) as Prisma.InputJsonValue | undefined,
+          taxSource: tax.data ? taxSource ?? 'server' : null,
           clientLat: dto.lat,
           clientLng: dto.lng,
           distanceM,
@@ -142,6 +159,60 @@ export class ReceiptsService {
   /** The soliq.uz fiscal-check link for a receipt — reviewers use it to read the real amount by hand. */
   soliqLink(receipt: { qrT: string; qrR: string; qrC: string; qrS: string }): string {
     return buildSoliqUrl({ t: receipt.qrT, r: receipt.qrR, c: receipt.qrC, s: receipt.qrS });
+  }
+
+  // ---------- large-receipt alerts (dashboard) ----------
+
+  /** Not-yet-acknowledged receipts at/above `receipt.large_alert_amount` from the last 30 days. */
+  async listLarge() {
+    const threshold = await this.settings.get('receipt.large_alert_amount');
+    const rows = await this.prisma.receipt.findMany({
+      where: {
+        amount: { gte: BigInt(threshold) },
+        status: { not: 'rejected' },
+        largeAckAt: null,
+        createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+      },
+      include: { station: true, card: { include: { user: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    return {
+      threshold,
+      items: rows.map((r) => {
+        const data = (r.taxData ?? null) as Record<string, unknown> | null;
+        const extra = (data?.extraInfo ?? null) as Record<string, unknown> | null;
+        const details = Array.isArray(data?.paymentDetails) ? (data!.paymentDetails as Record<string, unknown>[]) : [];
+        return {
+          id: r.id,
+          amount: Number(r.amount),
+          bonus: Number(r.bonus),
+          status: r.status,
+          receiptAt: r.receiptAt.toISOString(),
+          createdAt: r.createdAt.toISOString(),
+          stationName: r.station.name,
+          clientName: r.card.user.firstName,
+          clientPhone: r.card.user.phone,
+          taxSource: r.taxSource,
+          companyName: typeof extra?.companyName === 'string' ? extra.companyName : null,
+          tin: data?.tin != null ? String(data.tin) : null,
+          items: details.map((d) => ({
+            name: String(d.productName ?? d.name ?? ''),
+            quantity: Number(d.amount ?? 0),
+            unit: d.packageName != null ? String(d.packageName) : null,
+            price: Number(d.price ?? 0),
+          })),
+          soliqUrl: this.soliqLink(r),
+        };
+      }),
+    };
+  }
+
+  async ackLarge(id: string, actorId: string) {
+    const receipt = await this.prisma.receipt.findUnique({ where: { id } });
+    if (!receipt) throw new AppError('NOT_FOUND');
+    await this.prisma.receipt.update({ where: { id }, data: { largeAckAt: new Date(), largeAckBy: actorId } });
+    return { id };
   }
 
   async listPendingReview(cursor?: string, limit = 20) {

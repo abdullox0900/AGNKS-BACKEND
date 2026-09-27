@@ -281,6 +281,13 @@ model Receipt {
   taxAmount      BigInt?       @map("tax_amount")
   taxVerified    Boolean       @default(false) @map("tax_verified")
   taxCheckedAt   DateTime?     @map("tax_checked_at")
+  /// full soliq.uz payment record (items, company, TIN, VAT, device…) as returned by its API
+  taxData        Json?         @map("tax_data")
+  /// where taxData came from: 'server' (our own lookup) or 'client' (fetched by the webapp on the client's phone)
+  taxSource      String?       @map("tax_source")
+  /// large-receipt alert acknowledged in the dashboard
+  largeAckAt     DateTime?     @map("large_ack_at")
+  largeAckBy     String?       @map("large_ack_by")
   clientLat      Decimal?      @db.Decimal(9, 6) @map("client_lat")
   clientLng      Decimal?      @db.Decimal(9, 6) @map("client_lng")
   distanceM      Int?          @map("distance_m")

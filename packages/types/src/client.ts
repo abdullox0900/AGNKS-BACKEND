@@ -76,6 +76,13 @@ export const submitReceiptSchema = z
     manual: manualReceiptFieldsSchema.optional(),
     lat: latSchema.optional(),
     lng: lngSchema.optional(),
+    /**
+     * The soliq.uz payment record (`data` of POST new-ofd.soliq.uz/api/payment) as fetched
+     * by the webapp from the client's phone. soliq.uz doesn't answer servers outside
+     * Uzbekistan, so this is the fallback when the backend's own lookup fails. Checked
+     * against the QR (terminal / number / date) before it's trusted.
+     */
+    soliqData: z.record(z.string(), z.unknown()).optional(),
   })
   .refine((v) => !!v.qrText || !!v.manual, { message: 'qrText or manual is required' });
 export type SubmitReceiptDto = z.infer<typeof submitReceiptSchema>;
