@@ -53,10 +53,15 @@ export class UsersService {
   }
 
   async updateMe(userId: string, dto: UpdateMeDto) {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { firstName: dto.firstName, lang: dto.lang, phone: dto.phone },
-    });
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { firstName: dto.firstName, lang: dto.lang, phone: dto.phone },
+      });
+    } catch (err) {
+      if ((err as { code?: string }).code === 'P2002') throw new AppError('VALIDATION_ERROR', { message: 'phone_taken' });
+      throw err;
+    }
     return this.getMe(userId);
   }
 
@@ -157,21 +162,82 @@ export class UsersService {
     });
   }
 
-  async registerFromBot(tgUserId: number, firstName: string, phone: string): Promise<void> {
+  /**
+   * Bot registration. The phone number is unique across all users, so it can already belong to another
+   * row — typically a staff member (cashier/manager) who is now also becoming a client, or a row the
+   * webapp created before the bot flow finished:
+   *  - same Telegram account, already registered → 'already'
+   *  - number belongs to a different Telegram account → 'phone_taken'
+   *  - number belongs to a row without Telegram (staff) → the Telegram account is attached to that row
+   *    (an empty, just-opened webapp row for this Telegram id is dropped first; one with activity → 'conflict')
+   * Bonuses stay with the Telegram account: re-registering never touches the card.
+   */
+  async registerFromBot(tgUserId: number, firstName: string, phone: string, lang: 'uz' | 'ru' = 'uz'): Promise<RegisterFromBotResult> {
+    const tg = BigInt(tgUserId);
     const normalizedPhone = normalizePhone(phone);
-    await this.prisma.user.upsert({
-      where: { tgUserId: BigInt(tgUserId) },
-      create: {
-        tgUserId: BigInt(tgUserId),
-        firstName,
-        phone: normalizedPhone,
-        registeredAt: new Date(),
-        card: { create: { number: generateCardNumber() } },
-      },
-      update: { firstName, phone: normalizedPhone, registeredAt: new Date() },
-    });
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const mine = await tx.user.findUnique({ where: { tgUserId: tg }, include: { card: true } });
+        const owner = await tx.user.findUnique({ where: { phone: normalizedPhone }, include: { card: true } });
+
+        if (mine && owner && mine.id === owner.id) {
+          if (mine.registeredAt) return 'already' as const;
+          await tx.user.update({ where: { id: mine.id }, data: { firstName, registeredAt: new Date() } });
+          return 'registered' as const;
+        }
+
+        if (owner?.tgUserId) return 'phone_taken' as const; // someone else's Telegram account
+
+        if (owner) {
+          // staff row (or any row without Telegram) → attach this Telegram account to it
+          if (mine) {
+            const c = mine.card;
+            const used =
+              !!c &&
+              (c.cachedBalance !== 0n ||
+                c.pendingAmount !== 0n ||
+                (await tx.receipt.count({ where: { cardId: c.id } })) > 0 ||
+                (await tx.spendOperation.count({ where: { cardId: c.id } })) > 0 ||
+                (await tx.bonusLedger.count({ where: { cardId: c.id } })) > 0);
+            if (used) return 'conflict' as const;
+            await tx.user.delete({ where: { id: mine.id } });
+          }
+          await tx.user.update({
+            where: { id: owner.id },
+            data: { tgUserId: tg, firstName, registeredAt: new Date(), lang },
+          });
+          if (!owner.card) await tx.card.create({ data: { userId: owner.id, number: generateCardNumber() } });
+          return 'registered' as const;
+        }
+
+        if (mine) {
+          await tx.user.update({
+            where: { id: mine.id },
+            data: { firstName, phone: normalizedPhone, registeredAt: new Date(), ...(mine.registeredAt ? {} : { lang }) },
+          });
+          return mine.registeredAt && mine.phone === normalizedPhone ? ('already' as const) : ('registered' as const);
+        }
+
+        await tx.user.create({
+          data: {
+            tgUserId: tg,
+            firstName,
+            phone: normalizedPhone,
+            lang,
+            registeredAt: new Date(),
+            card: { create: { number: generateCardNumber() } },
+          },
+        });
+        return 'registered' as const;
+      });
+    } catch (err) {
+      if ((err as { code?: string }).code === 'P2002') return 'phone_taken'; // lost a race on the unique phone/tg id
+      throw err;
+    }
   }
 }
+
+export type RegisterFromBotResult = 'registered' | 'already' | 'phone_taken' | 'conflict';
 
 function generateCardNumber(): string {
   const digits = Array.from({ length: 12 }, () => Math.floor(Math.random() * 10)).join('');
