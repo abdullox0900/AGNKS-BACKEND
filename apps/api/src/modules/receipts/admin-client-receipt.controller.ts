@@ -7,7 +7,7 @@ import { ReceiptsService } from './receipts.service';
 /** One receipt of a client with the full soliq.uz record (dashboard client page). */
 @Controller('admin/clients')
 @UseGuards(StaffAuthGuard, RolesGuard)
-@Roles('branch_manager', 'root_admin', 'seo')
+@Roles('branch_manager', 'seo') // not root_admin: opening a client is closed to the view-only role
 export class AdminClientReceiptController {
   constructor(private readonly receipts: ReceiptsService) {}
 

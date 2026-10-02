@@ -19,14 +19,15 @@ export class AdminClientsController {
     return this.clients.search(q, cursor);
   }
 
+  // root_admin may browse the list but not open a client (balance, history, receipts) — view-only role.
   @Get(':id')
-  @Roles('branch_manager', 'root_admin', 'seo')
+  @Roles('branch_manager', 'seo')
   detail(@Param('id') id: string) {
     return this.clients.detail(id);
   }
 
   @Get(':id/history')
-  @Roles('branch_manager', 'root_admin', 'seo')
+  @Roles('branch_manager', 'seo')
   history(
     @Param('id') id: string,
     @Query('cursor') cursor?: string,
