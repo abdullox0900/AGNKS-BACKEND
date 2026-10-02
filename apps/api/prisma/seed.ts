@@ -7,16 +7,20 @@ import * as argon2 from 'argon2';
  *   SEED_ADMIN_PHONE     +998XXXXXXXXX   (default +998900000001)
  *   SEED_ADMIN_PASSWORD  required when NODE_ENV=production (local default: admin12345)
  *   SEED_ADMIN_NAME      default "Root Admin"
+ *   SEED_ADMIN_ROLE     root_admin (default, view-only) | seo (full access)
  *   SEED_DEMO=1          also creates a demo station, terminal and cashier (local testing only)
  *
  * An existing admin with the same phone is left alone unless SEED_RESET_PASSWORD=1.
+ * Login uses the FIRST dashboard role it finds, so give a seo account its own phone number.
  */
 const prisma = new PrismaClient();
 
 async function main() {
   const isProd = process.env.NODE_ENV === 'production';
   const phone = process.env.SEED_ADMIN_PHONE ?? '+998900000001';
-  const name = process.env.SEED_ADMIN_NAME ?? 'Root Admin';
+  const role = process.env.SEED_ADMIN_ROLE ?? 'root_admin';
+  if (role !== 'root_admin' && role !== 'seo') throw new Error('SEED_ADMIN_ROLE must be root_admin or seo');
+  const name = process.env.SEED_ADMIN_NAME ?? (role === 'seo' ? 'SEO' : 'Root Admin');
   const password = process.env.SEED_ADMIN_PASSWORD ?? (isProd ? '' : 'admin12345');
   if (!/^\+998\d{9}$/.test(phone)) throw new Error('SEED_ADMIN_PHONE must look like +998901234567');
   if (password.length < 6) throw new Error('SEED_ADMIN_PASSWORD is required (min 6 chars) when NODE_ENV=production');
@@ -26,8 +30,8 @@ async function main() {
     update: {},
     create: { phone, firstName: name },
   });
-  const hasRole = await prisma.userRole.findFirst({ where: { userId: admin.id, role: 'root_admin' } });
-  if (!hasRole) await prisma.userRole.create({ data: { userId: admin.id, role: 'root_admin', terminalIds: [] } });
+  const hasRole = await prisma.userRole.findFirst({ where: { userId: admin.id, role } });
+  if (!hasRole) await prisma.userRole.create({ data: { userId: admin.id, role, terminalIds: [] } });
 
   const creds = await prisma.staffCredentials.findUnique({ where: { userId: admin.id } });
   if (!creds?.passwordHash || process.env.SEED_RESET_PASSWORD === '1') {
@@ -37,9 +41,9 @@ async function main() {
       update: { ...data, failedAttempts: 0, lockedUntil: null },
       create: { userId: admin.id, ...data },
     });
-    console.log(`Root admin ${phone}: password set.`);
+    console.log(`${role} ${phone}: password set.`);
   } else {
-    console.log(`Root admin ${phone} already has a password — left unchanged (SEED_RESET_PASSWORD=1 to reset).`);
+    console.log(`${role} ${phone} already has a password — left unchanged (SEED_RESET_PASSWORD=1 to reset).`);
   }
 
   if (process.env.SEED_DEMO === '1') await seedDemo();

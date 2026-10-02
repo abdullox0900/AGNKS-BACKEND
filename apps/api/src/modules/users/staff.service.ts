@@ -20,15 +20,20 @@ export class StaffService {
 
   async list(actor: StaffActor, role?: StaffRole, stationId?: string) {
     const scoped = isNetworkWideRole(actor.role) ? stationId : actor.stationId;
+    // root_admin is view-only and the Admins section is not shown to it: cashiers only.
+    if (actor.role === 'root_admin' && role && DASHBOARD_ROLES.includes(role)) {
+      throw new AppError('AUTH_FORBIDDEN', { reason: 'admins_hidden' });
+    }
     const rows = await this.prisma.userRole.findMany({
-      where: { role, stationId: scoped ?? undefined },
+      where: { role: actor.role === 'root_admin' ? (role ?? 'cashier') : role, stationId: scoped ?? undefined },
       include: { user: true, station: true },
       orderBy: { user: { firstName: 'asc' } },
     });
 
     // Cashier passwords are visible to whoever manages the cashiers (the list is already scoped to
     // their station); other dashboard accounts' passwords only to SEO (explicit product decisions).
-    const visible = rows.filter((r) => (r.role === 'cashier' ? true : DASHBOARD_ROLES.includes(r.role) && actor.role === 'seo'))
+    // root_admin is view-only and gets no credentials at all.
+    const visible = rows.filter((r) => (r.role === 'cashier' ? actor.role !== 'root_admin' : DASHBOARD_ROLES.includes(r.role) && actor.role === 'seo'))
     const passwords = visible.length ? await this.dashboardAuth.readPasswords(visible.map((r) => r.userId)) : new Map<string, string>();
     return rows.map((r) => (visible.includes(r) ? { ...r, password: passwords.get(r.userId) ?? null } : r));
   }
