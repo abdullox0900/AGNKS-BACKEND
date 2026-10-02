@@ -8,12 +8,6 @@ export const dashboardLoginSchema = z.object({
 });
 export type DashboardLoginDto = z.infer<typeof dashboardLoginSchema>;
 
-export const dashboardRecoveryLoginSchema = z.object({
-  phone: z.string().regex(/^\+998\d{9}$/),
-  recoveryCode: z.string().min(1),
-});
-export type DashboardRecoveryLoginDto = z.infer<typeof dashboardRecoveryLoginSchema>;
-
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(6),
   newPassword: z.string().min(6),
@@ -31,15 +25,15 @@ export const createStaffSchema = z.object({
   password: z.string().min(6).optional(),
   // Cashier-only: lets the creator pick a PIN the cashier will actually remember,
   // instead of always forcing a random one. Falls back to auto-generated when omitted.
-  pin: z
-    .string()
-    .regex(/^\d{4,6}$/)
-    .optional(),
+  pin: z.string().min(4).max(72).optional(),
 });
 export type CreateStaffDto = z.infer<typeof createStaffSchema>;
 
 export const updateStaffSchema = z.object({
   firstName: z.string().trim().min(2).max(40).optional(),
+  // Dashboard accounts only (SEO): phone is the login, password replaces the current one.
+  phone: z.string().regex(/^\+998\d{9}$/).optional(),
+  password: z.string().min(4).max(72).optional(),
   stationId: z.string().uuid().nullable().optional(),
   terminalIds: z.array(z.string().uuid()).optional(),
 });
@@ -81,6 +75,11 @@ export const setBaseRateSchema = z.object({
   note: z.string().trim().max(300).optional(),
 });
 export type SetBaseRateDto = z.infer<typeof setBaseRateSchema>;
+
+export const setMethanePriceSchema = z.object({
+  price: z.number().int().min(0).max(1_000_000),
+});
+export type SetMethanePriceDto = z.infer<typeof setMethanePriceSchema>;
 
 export const createPromotionSchema = z
   .object({

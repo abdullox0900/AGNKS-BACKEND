@@ -42,6 +42,8 @@ export const meResponseSchema = z.object({
   spendMaxAmount: z.number().int(),
   /** client opted in to promo messages from the bot (active marketing consent) */
   marketingOptIn: z.boolean(),
+  /** today's methane price, so'm per m³ (set in Dashboard → Bonus; display only) */
+  methanePrice: z.number().int(),
 });
 export type MeResponse = z.infer<typeof meResponseSchema>;
 

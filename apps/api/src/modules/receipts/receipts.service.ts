@@ -161,6 +161,55 @@ export class ReceiptsService {
     return buildSoliqUrl({ t: receipt.qrT, r: receipt.qrR, c: receipt.qrC, s: receipt.qrS });
   }
 
+  /**
+   * Everything known about one receipt of a client, for the dashboard: our own record plus the
+   * complete soliq.uz payment record. Receipts saved before soliq data was stored get a live lookup.
+   */
+  async adminClientReceipt(userId: string, receiptId: string) {
+    const r = await this.prisma.receipt.findUnique({
+      where: { id: receiptId },
+      include: { station: true, terminal: true, promotion: true, card: { include: { user: true } } },
+    });
+    if (!r || r.card.userId !== userId) throw new AppError('NOT_FOUND');
+
+    let taxData = (r.taxData ?? null) as Record<string, unknown> | null;
+    let taxDataSource: 'stored' | 'live' | null = taxData ? 'stored' : null;
+    const soliqUrl = this.soliqLink(r);
+    if (!taxData) {
+      const live = await this.soliq.fetchAmount(soliqUrl, { t: r.qrT, r: r.qrR, c: r.qrC, s: r.qrS, url: soliqUrl }, 6000);
+      if (live.data) {
+        taxData = live.data;
+        taxDataSource = 'live';
+      }
+    }
+
+    return {
+      id: r.id,
+      status: r.status,
+      createdAt: r.createdAt.toISOString(),
+      receiptAt: r.receiptAt.toISOString(),
+      client: { id: r.card.user.id, name: r.card.user.firstName, phone: r.card.user.phone },
+      station: { id: r.station.id, name: r.station.name, address: r.station.address },
+      terminal: { code: r.terminal.code, label: r.terminal.label },
+      amount: Number(r.amount),
+      bonus: Number(r.bonus),
+      ratePercent: r.rateBps / 100,
+      promotionName: r.promotion?.name ?? null,
+      taxAmount: r.taxAmount === null ? null : Number(r.taxAmount),
+      taxVerified: r.taxVerified,
+      taxCheckedAt: r.taxCheckedAt?.toISOString() ?? null,
+      taxSource: r.taxSource,
+      reviewReasons: r.reviewReasons,
+      reviewNote: r.reviewNote,
+      reviewedAt: r.reviewedAt?.toISOString() ?? null,
+      distanceM: r.distanceM,
+      qr: { t: r.qrT, r: r.qrR, c: r.qrC, s: r.qrS },
+      soliqUrl,
+      taxData,
+      taxDataSource,
+    };
+  }
+
   // ---------- large-receipt alerts (dashboard) ----------
 
   /** Not-yet-acknowledged receipts at/above `receipt.large_alert_amount` from the last 30 days. */

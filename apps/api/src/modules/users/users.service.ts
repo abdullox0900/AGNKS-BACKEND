@@ -25,11 +25,12 @@ export class UsersService {
       select: { id: true },
     });
 
-    const [minAmount, maxAmount, spendMin, spendMax] = await Promise.all([
+    const [minAmount, maxAmount, spendMin, spendMax, methanePrice] = await Promise.all([
       this.settings.get('receipt.min_amount'),
       this.settings.get('receipt.max_amount'),
       this.settings.get('spend.min_amount'),
       this.settings.get('spend.max_amount'),
+      this.settings.get('methane.price'),
     ]);
 
     return {
@@ -47,6 +48,7 @@ export class UsersService {
       spendMinAmount: spendMin,
       spendMaxAmount: spendMax,
       marketingOptIn: !!marketingConsent,
+      methanePrice,
     };
   }
 

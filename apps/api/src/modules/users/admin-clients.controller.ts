@@ -25,6 +25,18 @@ export class AdminClientsController {
     return this.clients.detail(id);
   }
 
+  @Get(':id/history')
+  @Roles('branch_manager', 'root_admin', 'seo')
+  history(
+    @Param('id') id: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+    @Query('type') type?: string,
+  ) {
+    const kind = type === 'receipt' || type === 'spend' || type === 'adjust' ? type : undefined;
+    return this.clients.history(id, { cursor, limit: limit ? Number(limit) : undefined, type: kind });
+  }
+
   @Patch(':id')
   @Roles('seo')
   rename(

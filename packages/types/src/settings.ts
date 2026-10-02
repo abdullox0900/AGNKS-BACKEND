@@ -4,6 +4,8 @@ import { LOCATION_POLICY } from './enums';
 export const SETTINGS_DEFAULTS = {
   'bonus.base_rate_bps': 100,
   'bonus.expiry_days': 180,
+  /** "Bugungi metan narxi" shown in the client app, so'm per m³ — display only, not used in any calculation */
+  'methane.price': 3900,
   'receipt.max_age_min': 15 * 24 * 60,
   'receipt.min_amount': 10_000,
   'receipt.max_amount': 3_000_000,
@@ -29,6 +31,7 @@ export type SettingKey = keyof typeof SETTINGS_DEFAULTS;
 export const settingsSchemas = {
   'bonus.base_rate_bps': z.number().int().min(0).max(10000),
   'bonus.expiry_days': z.number().int().min(0),
+  'methane.price': z.number().int().min(0).max(1_000_000),
   'receipt.max_age_min': z.number().int().min(1),
   'receipt.min_amount': z.number().int().min(0),
   'receipt.max_amount': z.number().int().min(0),

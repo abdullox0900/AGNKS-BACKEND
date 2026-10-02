@@ -46,11 +46,6 @@ export class StaffController {
     return this.staff.resetPin(id, actor, body?.pin);
   }
 
-  @Post(':id/regenerate-recovery-code')
-  regenerateRecoveryCode(@Param('id') id: string, @CurrentStaff() actor: StaffActor) {
-    return this.staff.regenerateRecoveryCode(id, actor);
-  }
-
   @Delete(':id')
   remove(
     @Param('id') id: string,

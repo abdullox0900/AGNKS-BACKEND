@@ -75,6 +75,33 @@ export class BroadcastsService {
     return toDto(updated);
   }
 
+  /**
+   * Hard delete. Also drops the Telegram messages that haven't gone out yet (pending/failed outbox rows),
+   * so a deleted broadcast stops reaching people; messages already delivered can't be recalled.
+   * The webapp "Xabarlar" feed reads this table, so it disappears there too.
+   */
+  async remove(id: string, actorId: string) {
+    const existing = await this.prisma.broadcast.findUnique({ where: { id } });
+    if (!existing) throw new AppError('NOT_FOUND');
+    if (existing.status === 'sending') {
+      throw new AppError('VALIDATION_ERROR', { message: 'Broadcast is being sent right now — try again in a minute' });
+    }
+    await this.prisma.$transaction([
+      this.prisma.$executeRaw`
+        DELETE FROM outbox
+        WHERE kind = ${OUTBOX_KIND} AND payload->>'broadcastId' = ${id} AND status IN ('pending', 'failed')`,
+      this.prisma.broadcast.delete({ where: { id } }),
+    ]);
+    await this.audit.record({
+      actorId,
+      action: 'broadcast.delete',
+      entityType: 'broadcast',
+      entityId: id,
+      before: existing,
+    });
+    return { id };
+  }
+
   /** Announcement for a new promotion, in both languages, generated from its data. */
   async createForPromotion(
     promo: { id: string; name: string; rateBps: number; stationIds: string[]; startsAt: Date; endsAt: Date },

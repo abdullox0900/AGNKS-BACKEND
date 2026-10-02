@@ -3,10 +3,8 @@ import type { Request, Response } from 'express';
 import { AppError } from '@agnks/types';
 import {
   dashboardLoginSchema,
-  dashboardRecoveryLoginSchema,
   changePasswordSchema,
   type DashboardLoginDto,
-  type DashboardRecoveryLoginDto,
   type ChangePasswordDto,
 } from '@agnks/types';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
@@ -30,17 +28,6 @@ export class DashboardAuthController {
   @HttpCode(200)
   async login(@Body(new ZodValidationPipe(dashboardLoginSchema)) dto: DashboardLoginDto, @Res({ passthrough: true }) res: Response) {
     const { accessToken, refreshToken } = await this.auth.login(dto.phone, dto.password);
-    setRefreshCookie(res, refreshToken);
-    return { accessToken };
-  }
-
-  @Post('recovery-login')
-  @HttpCode(200)
-  async recoveryLogin(
-    @Body(new ZodValidationPipe(dashboardRecoveryLoginSchema)) dto: DashboardRecoveryLoginDto,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    const { accessToken, refreshToken } = await this.auth.recoveryLogin(dto.phone, dto.recoveryCode);
     setRefreshCookie(res, refreshToken);
     return { accessToken };
   }

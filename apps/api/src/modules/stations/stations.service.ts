@@ -49,7 +49,7 @@ export class StationsService {
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') {
         throw new AppError('VALIDATION_ERROR', {
-          message: "Bu filialda cheklar yoki smenalar mavjud — o'chirib bo'lmaydi, buning o'rniga yopish (status) dan foydalaning",
+          message: 'station_has_records',
         });
       }
       throw err;
@@ -84,6 +84,28 @@ export class StationsService {
     const terminal = await this.prisma.terminal.update({ where: { id }, data: input });
     await this.audit.record({ actorId, action: 'terminal.update', entityType: 'terminal', entityId: id, before, after: terminal });
     return terminal;
+  }
+
+  /** Real deletion — refused when receipts were already accepted through the terminal (deactivate it instead). */
+  async removeTerminal(id: string, actorId: string) {
+    const before = await this.prisma.terminal.findUnique({ where: { id } });
+    if (!before) throw new AppError('NOT_FOUND');
+
+    try {
+      await this.prisma.$transaction([
+        // cashiers keep a list of the terminals they work on — drop the deleted one from it
+        this.prisma.$executeRaw`UPDATE "user_roles" SET "terminal_ids" = array_remove("terminal_ids", ${id})`,
+        this.prisma.terminal.delete({ where: { id } }),
+      ]);
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') {
+        throw new AppError('VALIDATION_ERROR', { message: 'terminal_has_receipts' });
+      }
+      throw err;
+    }
+
+    await this.audit.record({ actorId, action: 'terminal.delete', entityType: 'terminal', entityId: id, before });
+    return { success: true };
   }
 
   async findTerminalByCode(code: string) {

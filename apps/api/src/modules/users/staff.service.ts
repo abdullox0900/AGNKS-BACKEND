@@ -20,11 +20,17 @@ export class StaffService {
 
   async list(actor: StaffActor, role?: StaffRole, stationId?: string) {
     const scoped = isNetworkWideRole(actor.role) ? stationId : actor.stationId;
-    return this.prisma.userRole.findMany({
+    const rows = await this.prisma.userRole.findMany({
       where: { role, stationId: scoped ?? undefined },
       include: { user: true, station: true },
       orderBy: { user: { firstName: 'asc' } },
     });
+
+    // Cashier passwords are visible to whoever manages the cashiers (the list is already scoped to
+    // their station); other dashboard accounts' passwords only to SEO (explicit product decisions).
+    const visible = rows.filter((r) => (r.role === 'cashier' ? true : DASHBOARD_ROLES.includes(r.role) && actor.role === 'seo'))
+    const passwords = visible.length ? await this.dashboardAuth.readPasswords(visible.map((r) => r.userId)) : new Map<string, string>();
+    return rows.map((r) => (visible.includes(r) ? { ...r, password: passwords.get(r.userId) ?? null } : r));
   }
 
   async create(dto: CreateStaffDto, actor: StaffActor) {
@@ -39,6 +45,10 @@ export class StaffService {
     if (DASHBOARD_ROLES.includes(dto.role) && !dto.password) {
       throw new AppError('VALIDATION_ERROR', { message: 'password is required for dashboard roles' });
     }
+
+    // The same person can't get the same role twice (it showed up as a duplicate row in the list).
+    const already = await this.prisma.userRole.findFirst({ where: { role: dto.role, user: { phone: dto.phone } }, select: { id: true } });
+    if (already) throw new AppError('VALIDATION_ERROR', { message: 'phone_taken' });
 
     const user = await this.prisma.user.upsert({
       where: { phone: dto.phone },
@@ -56,12 +66,11 @@ export class StaffService {
     });
 
     let generatedPin: string | undefined;
-    let recoveryCode: string | undefined;
     if (dto.role === 'cashier') {
       generatedPin = dto.pin ?? generatePin();
       await this.pinAuth.setPin(user.id, generatedPin);
     } else {
-      recoveryCode = (await this.dashboardAuth.setPassword(user.id, dto.password!)).recoveryCode;
+      await this.dashboardAuth.setPassword(user.id, dto.password!);
     }
 
     await this.audit.record({
@@ -72,7 +81,7 @@ export class StaffService {
       after: { user, role },
     });
 
-    return { user, role, generatedPin, recoveryCode };
+    return { user, role, generatedPin };
   }
 
   async update(id: string, dto: UpdateStaffDto, actor: StaffActor) {
@@ -87,17 +96,29 @@ export class StaffService {
       throw new AppError('AUTH_FORBIDDEN', { reason: 'dashboard_edit_requires_seo' });
     }
 
+    if (dto.phone && dto.phone !== before.user.phone) {
+      const taken = await this.prisma.user.findUnique({ where: { phone: dto.phone }, select: { id: true } });
+      if (taken && taken.id !== before.userId) throw new AppError('VALIDATION_ERROR', { message: 'phone_taken' });
+    }
+    if (dto.password && DASHBOARD_ROLES.includes(before.role) && dto.password.length < 6) {
+      throw new AppError('VALIDATION_ERROR', { message: 'password_too_short' });
+    }
+
     const [role] = await this.prisma.$transaction([
       this.prisma.userRole.update({
         where: { id },
         data: { stationId: dto.stationId, terminalIds: dto.terminalIds },
       }),
-      ...(dto.firstName
-        ? [this.prisma.user.update({ where: { id: before.userId }, data: { firstName: dto.firstName } })]
+      ...(dto.firstName || dto.phone
+        ? [this.prisma.user.update({ where: { id: before.userId }, data: { firstName: dto.firstName, phone: dto.phone } })]
         : []),
     ]);
+    if (dto.password) {
+      if (DASHBOARD_ROLES.includes(before.role)) await this.dashboardAuth.setPassword(before.userId, dto.password);
+      else await this.pinAuth.setPin(before.userId, dto.password);
+    }
 
-    await this.audit.record({ actorId: actor.userId, action: 'staff.update', entityType: 'user_role', entityId: id, before, after: role });
+    await this.audit.record({ actorId: actor.userId, action: 'staff.update', entityType: 'user_role', entityId: id, before, after: { ...role, passwordChanged: !!dto.password } });
     return role;
   }
 
@@ -110,24 +131,14 @@ export class StaffService {
     if (!isNetworkWideRole(actor.role) && role.stationId !== actor.stationId) {
       throw new AppError('AUTH_FORBIDDEN', { reason: 'station_out_of_scope' });
     }
-    if (customPin && !/^\d{4,6}$/.test(customPin)) {
-      throw new AppError('VALIDATION_ERROR', { message: 'pin must be 4-6 digits' });
+    if (customPin && (customPin.length < 4 || customPin.length > 72)) {
+      throw new AppError('VALIDATION_ERROR', { message: 'password_length' });
     }
 
     const pin = customPin ?? generatePin();
     await this.pinAuth.setPin(role.userId, pin);
     await this.audit.record({ actorId: actor.userId, action: 'staff.reset_pin', entityType: 'user_role', entityId: id });
     return { pin };
-  }
-
-  async regenerateRecoveryCode(id: string, actor: StaffActor): Promise<{ recoveryCode: string }> {
-    const role = await this.prisma.userRole.findUnique({ where: { id } });
-    if (!role || !DASHBOARD_ROLES.includes(role.role)) throw new AppError('NOT_FOUND');
-    if (!isNetworkWideRole(actor.role)) throw new AppError('AUTH_FORBIDDEN', { reason: 'dashboard_role_requires_network_wide' });
-
-    const { recoveryCode } = await this.dashboardAuth.regenerateRecoveryCode(role.userId);
-    await this.audit.record({ actorId: actor.userId, action: 'staff.regenerate_recovery_code', entityType: 'user_role', entityId: id });
-    return { recoveryCode };
   }
 
   async remove(id: string, actor: StaffActor, password?: string) {
@@ -143,12 +154,21 @@ export class StaffService {
       if (!password || !(await this.dashboardAuth.verifyPassword(actor.userId, password))) {
         throw new AppError('AUTH_INVALID_CREDENTIALS');
       }
+      // Nobody removes the account they are logged in with, and the last SEO always stays —
+      // otherwise the dashboard could be left with nobody able to manage admins.
+      if (role.userId === actor.userId) throw new AppError('AUTH_FORBIDDEN', { reason: 'cannot_remove_self' });
+      if (role.role === 'seo') {
+        const otherSeo = await this.prisma.userRole.count({ where: { role: 'seo', userId: { not: role.userId } } });
+        if (otherSeo === 0) throw new AppError('AUTH_FORBIDDEN', { reason: 'last_seo' });
+      }
     }
 
-    await this.prisma.$transaction([
-      this.prisma.userRole.delete({ where: { id } }),
-      this.prisma.user.update({ where: { id: role.userId }, data: { status: 'blocked' } }),
-    ]);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.userRole.delete({ where: { id } });
+      // Only lock the person out when this was their last role (one user can hold several).
+      const remaining = await tx.userRole.count({ where: { userId: role.userId } });
+      if (remaining === 0) await tx.user.update({ where: { id: role.userId }, data: { status: 'blocked' } });
+    });
 
     await this.audit.record({ actorId: actor.userId, action: 'staff.remove', entityType: 'user_role', entityId: id, before: role });
     return { success: true };

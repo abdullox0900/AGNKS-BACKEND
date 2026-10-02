@@ -76,6 +76,13 @@ export class StationsController {
     return this.stations.createTerminal(id, dto, actor.userId);
   }
 
+  @Delete('admin/terminals/:id')
+  @UseGuards(StaffAuthGuard, RolesGuard)
+  @Roles('seo')
+  removeTerminal(@Param('id') id: string, @CurrentStaff() actor: StaffActor) {
+    return this.stations.removeTerminal(id, actor.userId);
+  }
+
   @Patch('admin/terminals/:id')
   @UseGuards(StaffAuthGuard, RolesGuard)
   @Roles('root_admin', 'seo')

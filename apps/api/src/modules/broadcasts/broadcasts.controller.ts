@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { createBroadcastSchema, type CreateBroadcastDto } from '@agnks/types';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import { Roles } from '@/common/decorators/roles.decorator';
@@ -33,6 +33,11 @@ export class AdminBroadcastsController {
   @Post(':id/cancel')
   cancel(@Param('id') id: string, @CurrentStaff() actor: StaffActor) {
     return this.broadcasts.cancel(id, actor.userId);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string, @CurrentStaff() actor: StaffActor) {
+    return this.broadcasts.remove(id, actor.userId);
   }
 }
 

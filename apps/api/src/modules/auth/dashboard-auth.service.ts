@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import * as argon2 from 'argon2';
-import { randomInt } from 'node:crypto';
 import { AppError, isNetworkWideRole, type StaffRole } from '@agnks/types';
 import { PrismaService } from '@/infra/prisma/prisma.service';
+import { CryptoService } from '@/common/crypto/crypto.service';
 import { TokenService } from './token.service';
 
 const MAX_ATTEMPTS = 5;
@@ -14,6 +14,7 @@ export class DashboardAuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tokens: TokenService,
+    private readonly crypto: CryptoService,
   ) {}
 
   async login(phone: string, password: string): Promise<{ accessToken: string; refreshToken: string }> {
@@ -42,27 +43,6 @@ export class DashboardAuthService {
       where: { userId: user.id },
       data: { failedAttempts: 0, lockedUntil: null },
     });
-
-    return this.issueTokens(user.id, role.role, role.stationId);
-  }
-
-  /** Always works regardless of the current password — the recovery code never expires or
-   * gets rate-limited into a lockout the same way a password does; it's only ever
-   * regenerated explicitly (see `regenerateRecoveryCode`). */
-  async recoveryLogin(phone: string, recoveryCode: string): Promise<{ accessToken: string; refreshToken: string }> {
-    const user = await this.prisma.user.findUnique({
-      where: { phone },
-      include: { roles: true, credentials: true },
-    });
-    const role = user?.roles.find((r) => DASHBOARD_ROLES.includes(r.role));
-    if (!user || !role || !user.credentials?.recoveryCodeHash) {
-      throw new AppError('AUTH_INVALID_CREDENTIALS');
-    }
-
-    const valid = await argon2.verify(user.credentials.recoveryCodeHash, recoveryCode);
-    if (!valid) {
-      throw new AppError('AUTH_INVALID_CREDENTIALS');
-    }
 
     return this.issueTokens(user.id, role.role, role.stationId);
   }
@@ -101,29 +81,35 @@ export class DashboardAuthService {
     if (!valid) throw new AppError('AUTH_INVALID_CREDENTIALS');
 
     const passwordHash = await argon2.hash(newPassword);
-    await this.prisma.staffCredentials.update({ where: { userId }, data: { passwordHash } });
+    await this.prisma.staffCredentials.update({ where: { userId }, data: { passwordHash, passwordEnc: this.crypto.encrypt(newPassword) } });
   }
 
-  /** Sets the initial password for a newly created dashboard account (root_admin/seo picks it
-   * when filling out the "add admin" form) and issues a first recovery code alongside it. */
-  async setPassword(userId: string, password: string): Promise<{ recoveryCode: string }> {
+  /** Sets (or replaces) a dashboard account's password. Keeps a reversible copy for SEO and lifts any lockout. */
+  async setPassword(userId: string, password: string): Promise<void> {
     const passwordHash = await argon2.hash(password);
-    const recoveryCode = generateRecoveryCode();
-    const recoveryCodeHash = await argon2.hash(recoveryCode);
+    const passwordEnc = this.crypto.encrypt(password);
     await this.prisma.staffCredentials.upsert({
       where: { userId },
-      create: { userId, passwordHash, recoveryCodeHash },
-      update: { passwordHash, recoveryCodeHash, failedAttempts: 0, lockedUntil: null },
+      create: { userId, passwordHash, passwordEnc },
+      update: { passwordHash, passwordEnc, failedAttempts: 0, lockedUntil: null },
     });
-    return { recoveryCode };
   }
 
-  /** Shown once, like a cashier PIN reset — the old code stops working immediately. */
-  async regenerateRecoveryCode(userId: string): Promise<{ recoveryCode: string }> {
-    const recoveryCode = generateRecoveryCode();
-    const recoveryCodeHash = await argon2.hash(recoveryCode);
-    await this.prisma.staffCredentials.update({ where: { userId }, data: { recoveryCodeHash } });
-    return { recoveryCode };
+  /** userId → current password, for the accounts that have a stored copy (older accounts don't until reset). */
+  async readPasswords(userIds: string[]): Promise<Map<string, string>> {
+    const rows = await this.prisma.staffCredentials.findMany({
+      where: { userId: { in: userIds }, passwordEnc: { not: null } },
+      select: { userId: true, passwordEnc: true },
+    });
+    const out = new Map<string, string>();
+    for (const r of rows) {
+      try {
+        out.set(r.userId, this.crypto.decrypt(r.passwordEnc!));
+      } catch {
+        // encryption key changed since it was stored — treat as "not available"
+      }
+    }
+    return out;
   }
 
   private issueTokens(userId: string, role: StaffRole, stationId: string | null) {
@@ -142,11 +128,4 @@ export class DashboardAuthService {
       data: { failedAttempts: lockedUntil ? 0 : attempts, lockedUntil },
     });
   }
-}
-
-/** e.g. "483920-751046" — long enough to not be brute-forceable, short enough to write down. */
-function generateRecoveryCode(): string {
-  const a = String(randomInt(0, 1_000_000)).padStart(6, '0');
-  const b = String(randomInt(0, 1_000_000)).padStart(6, '0');
-  return `${a}-${b}`;
 }

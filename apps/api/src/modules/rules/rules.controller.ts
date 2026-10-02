@@ -3,12 +3,14 @@ import {
   createPromotionSchema,
   impactPreviewSchema,
   setBaseRateSchema,
+  setMethanePriceSchema,
   settingValueSchema,
   SETTING_KEYS,
   settingsSchemas,
   type CreatePromotionDto,
   type ImpactPreviewDto,
   type SetBaseRateDto,
+  type SetMethanePriceDto,
   type SettingKey,
   type PromotionStatus,
 } from '@agnks/types';
@@ -33,7 +35,22 @@ export class RulesController {
   @Get('bonus/settings')
   @Roles('branch_manager', 'root_admin', 'seo')
   async getBonusSettings() {
-    return { baseRateBps: await this.settings.get('bonus.base_rate_bps') };
+    const [baseRateBps, methanePrice] = await Promise.all([
+      this.settings.get('bonus.base_rate_bps'),
+      this.settings.get('methane.price'),
+    ]);
+    return { baseRateBps, methanePrice };
+  }
+
+  /** Display-only price for the client app's "Bugungi metan narxi" card; nothing else reads it. */
+  @Put('bonus/methane-price')
+  @Roles('root_admin', 'seo')
+  async setMethanePrice(
+    @Body(new ZodValidationPipe(setMethanePriceSchema)) dto: SetMethanePriceDto,
+    @CurrentStaff() actor: StaffActor,
+  ) {
+    await this.settings.set('methane.price', dto.price, actor.userId);
+    return { methanePrice: dto.price };
   }
 
   @Put('bonus/base-rate')

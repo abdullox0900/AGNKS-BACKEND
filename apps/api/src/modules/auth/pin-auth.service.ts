@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { AppError } from '@agnks/types';
 import { PrismaService } from '@/infra/prisma/prisma.service';
+import { CryptoService } from '@/common/crypto/crypto.service';
 import { TokenService } from './token.service';
 
 const MAX_ATTEMPTS = 5;
@@ -12,6 +13,7 @@ export class PinAuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tokens: TokenService,
+    private readonly crypto: CryptoService,
   ) {}
 
   async login(phone: string, pin: string): Promise<{ accessToken: string; refreshToken: string }> {
@@ -59,10 +61,12 @@ export class PinAuthService {
 
   async setPin(userId: string, pin: string): Promise<void> {
     const pinHash = await argon2.hash(pin);
+    // reversible copy so managers can look the cashier's password up again (see StaffService.list)
+    const passwordEnc = this.crypto.encrypt(pin);
     await this.prisma.staffCredentials.upsert({
       where: { userId },
-      create: { userId, pinHash },
-      update: { pinHash, failedAttempts: 0, lockedUntil: null },
+      create: { userId, pinHash, passwordEnc },
+      update: { pinHash, passwordEnc, failedAttempts: 0, lockedUntil: null },
     });
   }
 }

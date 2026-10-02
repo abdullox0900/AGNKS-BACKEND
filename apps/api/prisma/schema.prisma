@@ -153,12 +153,11 @@ model StaffCredentials {
   userId          String    @id @map("user_id")
   passwordHash    String?   @map("password_hash")
   pinHash         String?   @map("pin_hash")
-  // Plaintext copy of the cashier's current PIN, kept only so a manager/SEO can look it
-  // up again later (explicit product decision — cashiers forget it and there's no
-  // self-serve recovery flow). pinHash above is still what authenticates logins.
-  pin             String?   @map("pin")
   totpSecret      String?   @map("totp_secret")
-  recoveryCodeHash String?  @map("recovery_code_hash")
+  // Reversible (AES-256-GCM, see CryptoService) copy of the login secret — a dashboard admin's
+  // password or a cashier's password (pinHash) — so managers can look it up again (explicit
+  // product decision). The hashes are still what authenticate logins.
+  passwordEnc     String?   @map("password_enc")
   failedAttempts  Int       @default(0) @map("failed_attempts")
   lockedUntil     DateTime? @map("locked_until")
 
