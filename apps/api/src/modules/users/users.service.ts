@@ -70,6 +70,7 @@ export class UsersService {
       where: { id: userId },
       data: { firstName: dto.firstName, registeredAt: new Date() },
     });
+    await this.defaultMarketingOptIn(this.prisma, userId);
     return this.getMe(userId);
   }
 
@@ -154,6 +155,16 @@ export class UsersService {
    * user+card if this is the very first contact from this Telegram id (they
    * may `/start` the bot before ever opening the webapp).
    */
+  /**
+   * Promo messages ("Aksiya xabarlari") start switched ON for a client's first registration; they can turn
+   * them off in the app afterwards. Only when the client has never had a marketing consent row, so a later
+   * re-registration (after logging out) never overrides what they chose.
+   */
+  private async defaultMarketingOptIn(db: Pick<PrismaService, 'consent'>, userId: string): Promise<void> {
+    const any = await db.consent.findFirst({ where: { userId, type: 'marketing' }, select: { id: true } });
+    if (!any) await db.consent.create({ data: { userId, type: 'marketing', version: '1' } });
+  }
+
   /** A client who finished bot registration (and hasn't logged out of the webapp). */
   findRegisteredByTg(tgUserId: number) {
     return this.prisma.user.findFirst({
@@ -183,6 +194,7 @@ export class UsersService {
         if (mine && owner && mine.id === owner.id) {
           if (mine.registeredAt) return 'already' as const;
           await tx.user.update({ where: { id: mine.id }, data: { firstName, registeredAt: new Date() } });
+          await this.defaultMarketingOptIn(tx, mine.id);
           return 'registered' as const;
         }
 
@@ -207,6 +219,7 @@ export class UsersService {
             data: { tgUserId: tg, firstName, registeredAt: new Date(), lang },
           });
           if (!owner.card) await tx.card.create({ data: { userId: owner.id, number: generateCardNumber() } });
+          await this.defaultMarketingOptIn(tx, owner.id);
           return 'registered' as const;
         }
 
@@ -215,10 +228,11 @@ export class UsersService {
             where: { id: mine.id },
             data: { firstName, phone: normalizedPhone, registeredAt: new Date(), ...(mine.registeredAt ? {} : { lang }) },
           });
+          if (!mine.registeredAt) await this.defaultMarketingOptIn(tx, mine.id);
           return mine.registeredAt && mine.phone === normalizedPhone ? ('already' as const) : ('registered' as const);
         }
 
-        await tx.user.create({
+        const created = await tx.user.create({
           data: {
             tgUserId: tg,
             firstName,
@@ -228,6 +242,7 @@ export class UsersService {
             card: { create: { number: generateCardNumber() } },
           },
         });
+        await this.defaultMarketingOptIn(tx, created.id);
         return 'registered' as const;
       });
     } catch (err) {
