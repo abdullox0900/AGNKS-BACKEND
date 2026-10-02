@@ -14,7 +14,11 @@ export type OutboxKind =
   | 'staff.shift_flagged'
   | 'staff.shift_forgotten'
   | 'staff.anomaly'
-  | 'staff.daily_report';
+  | 'staff.daily_report'
+  | 'staff.cashier_daily';
+
+/** The staff bot is silent except for this one message (a cashier's end-of-day summary). */
+export const STAFF_KIND_ALLOWED: OutboxKind = 'staff.cashier_daily';
 
 /**
  * Outbox pattern (TZ-4 §11): a notification is written in the SAME
@@ -27,6 +31,9 @@ export class NotificationsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async enqueue(kind: OutboxKind, payload: Record<string, unknown>, tx?: Prisma.TransactionClient): Promise<void> {
+    // Legacy staff notifications (anomalies, forgotten shifts, daily report for admins…) are switched off by
+    // product decision — the call sites stay, nothing is queued.
+    if (kind.startsWith('staff.') && kind !== STAFF_KIND_ALLOWED) return;
     const client = tx ?? this.prisma;
     await client.outbox.create({ data: { kind, payload: payload as object } });
   }

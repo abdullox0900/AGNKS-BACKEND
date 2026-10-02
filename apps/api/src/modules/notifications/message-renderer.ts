@@ -27,6 +27,8 @@ export function renderMessage(kind: OutboxKind, payload: Record<string, unknown>
       return `🔎 Anomaliya aniqlandi: ${payload.reason ?? 'unknown'}.`;
     case 'staff.daily_report':
       return `📊 Kunlik hisobot tayyor.`;
+    case 'staff.cashier_daily':
+      return `📊 Siz bugun ${payload.count} ta operatsiyada jami ${formatMoney(payload.amount)} bonus yechib berdingiz.`;
     default:
       return 'Bildirishnoma';
   }

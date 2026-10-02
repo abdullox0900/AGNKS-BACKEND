@@ -6,7 +6,7 @@ import { QUEUE_NAMES } from '@/infra/queue/queue.constants';
 import { CLIENT_BOT, STAFF_BOT } from '@/infra/telegram/telegram.constants';
 import { PrismaService } from '@/infra/prisma/prisma.service';
 import { renderMessage } from '@/modules/notifications/message-renderer';
-import type { OutboxKind } from '@/modules/notifications/notifications.service';
+import { STAFF_KIND_ALLOWED, type OutboxKind } from '@/modules/notifications/notifications.service';
 
 const BATCH_SIZE = 50;
 
@@ -49,6 +49,11 @@ export class OutboxProcessor extends WorkerHost {
     try {
       const payload = row.payload as Record<string, unknown>;
       const kind = row.kind as OutboxKind;
+      if (kind.startsWith('staff.') && kind !== STAFF_KIND_ALLOWED) {
+        // queued before the staff bot went silent — discard instead of sending
+        await this.prisma.outbox.update({ where: { id: row.id }, data: { status: 'sent' } });
+        return;
+      }
       const recipients = await this.resolveRecipients(kind, payload);
       const text = renderMessage(kind, payload);
 
