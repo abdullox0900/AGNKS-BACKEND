@@ -30,6 +30,22 @@ export class ClientBotService implements OnModuleInit {
 
     this.bot.command('start', async (ctx) => {
       if (!ctx.from) return;
+
+      // Already registered: just point to the app. Re-registering would be pointless (and the account,
+      // card and bonuses are keyed by the Telegram id anyway, so nothing is lost either way).
+      const existing = await this.users.findRegisteredByTg(ctx.from.id);
+      if (existing) {
+        this.awaitingName.delete(ctx.from.id);
+        this.pendingName.delete(ctx.from.id);
+        await ctx.reply(
+          existing.lang === 'ru'
+            ? `Здравствуйте, ${existing.firstName}! Вы уже зарегистрированы. Откройте приложение кнопкой внизу.`
+            : `Assalomu alaykum, ${existing.firstName}! Siz allaqachon ro'yxatdan o'tgansiz. Ilovani pastdagi tugma orqali oching.`,
+          { reply_markup: { remove_keyboard: true } },
+        );
+        return;
+      }
+
       this.awaitingName.add(ctx.from.id);
       this.pendingName.delete(ctx.from.id);
       await ctx.reply("Assalomu alaykum! Ro'yxatdan o'tish uchun ismingizni yozing.", {

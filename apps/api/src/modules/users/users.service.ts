@@ -149,6 +149,14 @@ export class UsersService {
    * user+card if this is the very first contact from this Telegram id (they
    * may `/start` the bot before ever opening the webapp).
    */
+  /** A client who finished bot registration (and hasn't logged out of the webapp). */
+  findRegisteredByTg(tgUserId: number) {
+    return this.prisma.user.findFirst({
+      where: { tgUserId: BigInt(tgUserId), registeredAt: { not: null } },
+      select: { firstName: true, lang: true },
+    });
+  }
+
   async registerFromBot(tgUserId: number, firstName: string, phone: string): Promise<void> {
     const normalizedPhone = normalizePhone(phone);
     await this.prisma.user.upsert({
