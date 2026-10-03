@@ -5,7 +5,7 @@ import { GrammyError, type Bot } from 'grammy';
 import { QUEUE_NAMES } from '@/infra/queue/queue.constants';
 import { CLIENT_BOT, STAFF_BOT } from '@/infra/telegram/telegram.constants';
 import { PrismaService } from '@/infra/prisma/prisma.service';
-import { renderMessage } from '@/modules/notifications/message-renderer';
+import { isHtmlMessage, renderMessage } from '@/modules/notifications/message-renderer';
 import { STAFF_KIND_ALLOWED, type OutboxKind } from '@/modules/notifications/notifications.service';
 
 const BATCH_SIZE = 50;
@@ -55,7 +55,6 @@ export class OutboxProcessor extends WorkerHost {
         return;
       }
       const recipients = await this.resolveRecipients(kind, payload);
-      const text = renderMessage(kind, payload);
 
       const bot = kind.startsWith('staff.') ? this.staffBot : this.clientBot;
       if (!bot) throw new Error('bot_unavailable');
@@ -67,7 +66,12 @@ export class OutboxProcessor extends WorkerHost {
         return;
       }
 
-      const results = await Promise.allSettled(recipients.map((tgUserId) => bot.api.sendMessage(tgUserId, text)));
+      // each recipient gets the text in their own language (the one chosen in the webapp)
+      const langs = await this.languagesOf(recipients);
+      const options = isHtmlMessage(kind) ? { parse_mode: 'HTML' as const } : undefined;
+      const results = await Promise.allSettled(
+        recipients.map((tgUserId) => bot.api.sendMessage(tgUserId, renderMessage(kind, payload, langs.get(tgUserId) ?? 'uz'), options)),
+      );
       const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
       for (const failure of failures) {
         this.logger.warn(`sendMessage failed: ${(failure.reason as Error)?.message ?? failure.reason}`);
@@ -98,6 +102,11 @@ export class OutboxProcessor extends WorkerHost {
         },
       });
     }
+  }
+
+  private async languagesOf(tgIds: number[]): Promise<Map<number, 'uz' | 'ru'>> {
+    const users = await this.prisma.user.findMany({ where: { tgUserId: { in: tgIds.map((n) => BigInt(n)) } }, select: { tgUserId: true, lang: true } });
+    return new Map(users.map((u) => [Number(u.tgUserId), u.lang as 'uz' | 'ru']));
   }
 
   private async resolveRecipients(kind: OutboxKind, payload: Record<string, unknown>): Promise<number[]> {

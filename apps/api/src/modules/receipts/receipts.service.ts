@@ -134,7 +134,7 @@ export class ReceiptsService {
 
       await this.notifications.enqueue(
         status === 'applied' ? 'client.receipt_applied' : 'client.receipt_pending',
-        { cardId, receiptId: receipt.id, bonus: bonus.toString() },
+        { cardId, receiptId: receipt.id, bonus: bonus.toString(), ...(balanceAfter !== undefined ? { balanceAfter: balanceAfter.toString() } : {}) },
         tx,
       );
 
