@@ -16,8 +16,10 @@ export class AdminReviewController {
   constructor(private readonly receipts: ReceiptsService) {}
 
   @Get()
-  list(@Query('cursor') cursor?: string) {
-    return this.receipts.listPendingReview(cursor);
+  async list(@Query('cursor') cursor?: string) {
+    const { items, nextCursor } = await this.receipts.listPendingReview(cursor);
+    // each item carries the soliq.uz link so the reviewer can open the fiscal receipt straight from the queue
+    return { items: items.map((r) => ({ ...r, soliqLink: this.receipts.soliqLink(r) })), nextCursor };
   }
 
   @Get(':receiptId')

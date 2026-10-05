@@ -267,7 +267,7 @@ export class ReceiptsService {
   async listPendingReview(cursor?: string, limit = 20) {
     const rows = await this.prisma.receipt.findMany({
       where: { status: 'pending_review' },
-      include: { station: true, card: { include: { user: true } } },
+      include: { station: true, terminal: true, card: { include: { user: true } } },
       orderBy: { createdAt: 'asc' },
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -278,7 +278,7 @@ export class ReceiptsService {
   }
 
   async reviewDetail(id: string) {
-    const receipt = await this.prisma.receipt.findUnique({ where: { id }, include: { station: true, card: { include: { user: true } } } });
+    const receipt = await this.prisma.receipt.findUnique({ where: { id }, include: { station: true, terminal: true, card: { include: { user: true } } } });
     if (!receipt) throw new AppError('NOT_FOUND');
     return receipt;
   }
