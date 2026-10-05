@@ -4,10 +4,11 @@ import { ExportService } from './export.service';
 import { AnalyticsController } from './analytics.controller';
 import { BonusReportController } from './bonus-report.controller';
 import { BonusReportService } from './bonus-report.service';
+import { TopClientsService } from './top-clients.service';
 
 @Module({
   controllers: [AnalyticsController, BonusReportController],
-  providers: [AnalyticsService, ExportService, BonusReportService],
+  providers: [AnalyticsService, ExportService, BonusReportService, TopClientsService],
   exports: [AnalyticsService],
 })
 export class AnalyticsModule {}

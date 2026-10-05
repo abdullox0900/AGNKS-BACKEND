@@ -8,13 +8,17 @@ import { Roles } from '@/common/decorators/roles.decorator';
 import { CurrentStaff } from '@/common/decorators/current-actor.decorator';
 import type { StaffActor } from '@/common/types/actor';
 import { BonusReportService, type ReportFilter } from './bonus-report.service';
+import { TopClientsService } from './top-clients.service';
 
 /** "Bonus hisoboti": earned vs redeemed bonus per station / client / operation, with an Excel export. */
 @Controller('admin/bonus-report')
 @UseGuards(StaffAuthGuard, RolesGuard, StationScopeGuard)
 @Roles('branch_manager', 'root_admin', 'seo')
 export class BonusReportController {
-  constructor(private readonly report: BonusReportService) {}
+  constructor(
+    private readonly report: BonusReportService,
+    private readonly topClients: TopClientsService,
+  ) {}
 
   private filter(actor: StaffActor, from: string, to: string, stationIds?: string | string[]): ReportFilter {
     const f = new Date(from);
@@ -22,6 +26,12 @@ export class BonusReportController {
     if (Number.isNaN(f.getTime()) || Number.isNaN(t.getTime())) throw new AppError('VALIDATION_ERROR', { message: 'from/to must be ISO dates' });
     const ids = stationIds ? (Array.isArray(stationIds) ? stationIds : [stationIds]) : undefined;
     return { from: f, to: t, stationIds: this.report.scope(actor, ids) };
+  }
+
+  /** Top 5 clients: by receipts scanned in the period and by current bonus balance. */
+  @Get('top-clients')
+  top(@CurrentStaff() actor: StaffActor, @Query('from') from: string, @Query('to') to: string, @Query('stationIds') stationIds?: string | string[]) {
+    return this.topClients.top(this.filter(actor, from, to, stationIds));
   }
 
   @Get('summary')

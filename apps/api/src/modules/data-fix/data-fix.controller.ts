@@ -8,8 +8,14 @@ import { Roles } from '@/common/decorators/roles.decorator';
 import { CurrentStaff } from '@/common/decorators/current-actor.decorator';
 import type { StaffActor } from '@/common/types/actor';
 import { DataFixService, type RecordKind } from './data-fix.service';
+import { DataFixGateService } from './data-fix-gate.service';
+import { DataFixUnlockedGuard } from './data-fix-unlocked.guard';
 
 const refs = z.array(z.object({ kind: z.enum(['receipt', 'spend', 'adjust']), id: z.string().min(1).max(64) })).min(1).max(500);
+const gatePassword = z.string().min(8).max(200);
+const setupSchema = z.object({ password: gatePassword, loginPassword: z.string().min(1).max(200) });
+const unlockSchema = z.object({ password: z.string().min(1).max(200) });
+const changeSchema = z.object({ current: z.string().min(1).max(200), next: gatePassword });
 const previewSchema = z.object({ items: refs });
 const deleteSchema = z.object({ items: refs, password: z.string().min(1).max(200), note: z.string().trim().min(3).max(500) });
 
@@ -18,9 +24,40 @@ const deleteSchema = z.object({ items: refs, password: z.string().min(1).max(200
 @UseGuards(StaffAuthGuard, RolesGuard)
 @Roles('seo')
 export class DataFixController {
-  constructor(private readonly fix: DataFixService) {}
+  constructor(
+    private readonly fix: DataFixService,
+    private readonly gate: DataFixGateService,
+  ) {}
+
+  // ---- the page password ----
+
+  @Get('gate')
+  gateStatus() {
+    return this.gate.status();
+  }
+
+  @Post('gate/setup')
+  @HttpCode(200)
+  setup(@Body(new ZodValidationPipe(setupSchema)) dto: z.infer<typeof setupSchema>, @CurrentStaff() actor: StaffActor) {
+    return this.gate.setup(actor.userId, dto.password, dto.loginPassword);
+  }
+
+  @Post('gate/unlock')
+  @HttpCode(200)
+  unlock(@Body(new ZodValidationPipe(unlockSchema)) dto: z.infer<typeof unlockSchema>, @CurrentStaff() actor: StaffActor) {
+    return this.gate.unlock(actor.userId, dto.password);
+  }
+
+  @Post('gate/change')
+  @HttpCode(200)
+  change(@Body(new ZodValidationPipe(changeSchema)) dto: z.infer<typeof changeSchema>, @CurrentStaff() actor: StaffActor) {
+    return this.gate.change(actor.userId, dto.current, dto.next);
+  }
+
+  // ---- the tool itself: needs a fresh unlock token ----
 
   @Get('records')
+  @UseGuards(DataFixUnlockedGuard)
   records(
     @Query('from') from: string,
     @Query('to') to: string,
@@ -49,12 +86,14 @@ export class DataFixController {
   }
 
   @Post('preview')
+  @UseGuards(DataFixUnlockedGuard)
   @HttpCode(200)
   preview(@Body(new ZodValidationPipe(previewSchema)) dto: z.infer<typeof previewSchema>) {
     return this.fix.preview(dto.items);
   }
 
   @Post('delete')
+  @UseGuards(DataFixUnlockedGuard)
   @HttpCode(200)
   remove(@Body(new ZodValidationPipe(deleteSchema)) dto: z.infer<typeof deleteSchema>, @CurrentStaff() actor: StaffActor) {
     return this.fix.remove(dto.items, { password: dto.password, note: dto.note }, actor);
