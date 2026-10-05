@@ -120,7 +120,18 @@ export class BonusReportService {
       }),
       { receiptsCount: 0, receiptsSum: 0, earned: 0, pending: 0, redeemed: 0, redeemCount: 0 },
     );
-    return { stations, totals };
+    // Manual balance adjustments by SEO belong to no station, so they are only reported for "all stations";
+    // without this line a topped-up balance that was then redeemed looks like more redeemed than earned.
+    const adjusted = f.stationIds?.length
+      ? 0
+      : num(
+          (
+            await this.prisma.$queryRaw<{ s: bigint }[]>`
+              SELECT COALESCE(SUM(delta), 0)::bigint AS s FROM bonus_ledger
+              WHERE type = 'adjust' AND created_at BETWEEN ${f.from} AND ${f.to}`
+          )[0]?.s,
+        );
+    return { stations, totals: { ...totals, adjusted } };
   }
 
   async clients(f: ReportFilter, opts: { q?: string; limit: number; offset: number }) {
@@ -264,6 +275,10 @@ export class BonusReportService {
     summary.stations.forEach((s) => s1.addRow([s.name, s.receiptsCount, s.receiptsSum, s.earned, s.redeemed, s.redeemCount, s.earned - s.redeemed, s.pending]));
     const t = summary.totals;
     totalRow(s1.addRow(['JAMI (barcha filiallar)', t.receiptsCount, t.receiptsSum, t.earned, t.redeemed, t.redeemCount, t.earned - t.redeemed, t.pending]));
+    if (t.adjusted !== 0) {
+      const adj = s1.addRow(["Qo'lda tuzatish (SEO) — filialga bog'lanmagan", '', '', t.adjusted, '', '', '', '']);
+      adj.font = { italic: true };
+    }
     [3, 4, 5, 7, 8].forEach((c) => (s1.getColumn(c).numFmt = MONEY));
 
     // 2) per client

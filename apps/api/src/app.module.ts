@@ -28,6 +28,7 @@ import { DisputesModule } from '@/modules/disputes/disputes.module';
 import { FeedbackModule } from '@/modules/feedback/feedback.module';
 import { NotificationsModule } from '@/modules/notifications/notifications.module';
 import { AnalyticsModule } from '@/modules/analytics/analytics.module';
+import { DataFixModule } from '@/modules/data-fix/data-fix.module';
 import { AuditModule } from '@/modules/audit/audit.module';
 import { BotModule } from '@/modules/bot/bot.module';
 import { BroadcastsModule } from '@/modules/broadcasts/broadcasts.module';
@@ -56,6 +57,7 @@ import { HealthController } from '@/modules/health/health.controller';
     FeedbackModule,
     NotificationsModule,
     AnalyticsModule,
+    DataFixModule,
     AuditModule,
     BotModule,
     BroadcastsModule,

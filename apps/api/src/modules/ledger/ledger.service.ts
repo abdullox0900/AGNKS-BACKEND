@@ -66,6 +66,24 @@ export class LedgerService {
     return { balanceAfter, entryId: entry.id };
   }
 
+  /**
+   * After ledger rows were removed by a data correction: recompute every remaining row's `balance_after` as a
+   * running sum and set `cached_balance` to the total, so the card is consistent again (what `findDrift` checks).
+   * Must run inside the transaction that deleted the rows, with the card row already locked.
+   */
+  async rebuildCard(tx: Tx, cardId: string): Promise<bigint> {
+    await tx.$executeRaw`
+      UPDATE bonus_ledger b SET balance_after = r.running
+      FROM (
+        SELECT id, SUM(delta) OVER (ORDER BY created_at, id) AS running
+        FROM bonus_ledger WHERE card_id = ${cardId}
+      ) r
+      WHERE b.id = r.id AND b.balance_after <> r.running`;
+    const [row] = await tx.$queryRaw<{ total: bigint }[]>`SELECT COALESCE(SUM(delta), 0)::bigint AS total FROM bonus_ledger WHERE card_id = ${cardId}`;
+    await tx.card.update({ where: { id: cardId }, data: { cachedBalance: row.total } });
+    return row.total;
+  }
+
   async adjustPending(tx: Tx, cardId: string, delta: bigint): Promise<void> {
     await tx.card.update({
       where: { id: cardId },
