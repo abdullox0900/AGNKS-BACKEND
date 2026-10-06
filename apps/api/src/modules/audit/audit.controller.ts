@@ -4,10 +4,10 @@ import { RolesGuard } from '@/common/guards/roles.guard';
 import { StaffAuthGuard } from '@/common/guards/staff-auth.guard';
 import { AuditService } from './audit.service';
 
-/** "Who changed what" — the dashboard action history. Visible to SEO and (view-only) root_admin. */
+/** "Who changed what" — the dashboard action history. SEO only (root_admin does not see it). */
 @Controller('admin/audit')
 @UseGuards(StaffAuthGuard, RolesGuard)
-@Roles('root_admin', 'seo')
+@Roles('seo')
 export class AuditController {
   constructor(private readonly audit: AuditService) {}
 
