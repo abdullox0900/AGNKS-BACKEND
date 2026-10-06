@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
-import { reviewApproveSchema, reviewRejectSchema, type ReviewApproveDto, type ReviewRejectDto } from '@agnks/types';
+import { isNetworkWideRole, reviewApproveSchema, reviewRejectSchema, type ReviewApproveDto, type ReviewRejectDto } from '@agnks/types';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import { StaffAuthGuard } from '@/common/guards/staff-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -20,6 +20,12 @@ export class AdminReviewController {
     const { items, nextCursor } = await this.receipts.listPendingReview(cursor);
     // each item carries the soliq.uz link so the reviewer can open the fiscal receipt straight from the queue
     return { items: items.map((r) => ({ ...r, soliqLink: this.receipts.soliqLink(r) })), nextCursor };
+  }
+
+  /** Already-decided receipts with who decided — a branch manager sees only their own station. */
+  @Get('history/list')
+  history(@CurrentStaff() actor: StaffActor, @Query('cursor') cursor?: string) {
+    return this.receipts.listReviewed(isNetworkWideRole(actor.role) ? null : actor.stationId, cursor);
   }
 
   @Get(':receiptId')

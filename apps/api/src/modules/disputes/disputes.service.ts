@@ -3,6 +3,7 @@ import { AppError, type DisputeCreateDto, type ResolveDisputeDto } from '@agnks/
 import { PrismaService } from '@/infra/prisma/prisma.service';
 import { LedgerService } from '@/modules/ledger/ledger.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
+import { AuditService } from '@/modules/audit/audit.service';
 
 @Injectable()
 export class DisputesService {
@@ -10,6 +11,7 @@ export class DisputesService {
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
     private readonly notifications: NotificationsService,
+    private readonly audit: AuditService,
   ) {}
 
   async create(cardId: string, dto: DisputeCreateDto) {
@@ -124,7 +126,7 @@ export class DisputesService {
     if (!dispute) throw new AppError('NOT_FOUND');
     if (dispute.status !== 'open') return dispute;
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       if (dto.resolution === 'reversed' && dispute.refType === 'spend') {
         const spend = await tx.spendOperation.findUnique({ where: { id: dispute.refId } });
         if (spend && spend.status === 'applied') {
@@ -170,5 +172,13 @@ export class DisputesService {
 
       return updated;
     });
+    await this.audit.record({
+      actorId: resolverId,
+      action: 'dispute.resolve',
+      entityType: 'dispute',
+      entityId: id,
+      after: { resolution: dto.resolution, amount: dto.amount ?? null, note: dto.note ?? null },
+    });
+    return result;
   }
 }

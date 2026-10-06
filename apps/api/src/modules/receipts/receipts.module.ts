@@ -10,9 +10,10 @@ import { LedgerModule } from '@/modules/ledger/ledger.module';
 import { RulesModule } from '@/modules/rules/rules.module';
 import { NotificationsModule } from '@/modules/notifications/notifications.module';
 import { AuthModule } from '@/modules/auth/auth.module';
+import { AuditModule } from '@/modules/audit/audit.module';
 
 @Module({
-  imports: [LedgerModule, RulesModule, NotificationsModule, AuthModule],
+  imports: [LedgerModule, RulesModule, NotificationsModule, AuthModule, AuditModule],
   controllers: [ReceiptsController, AdminReviewController, AdminLargeReceiptsController, AdminClientReceiptController],
   providers: [ReceiptsService, SoliqFetchService, HistoryService],
   exports: [ReceiptsService, HistoryService],

@@ -2,12 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { AppError, type FeedbackCreateDto } from '@agnks/types';
 import { PrismaService } from '@/infra/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
+import { AuditService } from '@/modules/audit/audit.service';
 
 @Injectable()
 export class FeedbackService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly audit: AuditService,
   ) {}
 
   async create(cardId: string, dto: FeedbackCreateDto) {
@@ -47,9 +49,11 @@ export class FeedbackService {
     if (!feedback) throw new AppError('NOT_FOUND');
     if (feedback.status !== 'open') return feedback;
 
-    return this.prisma.feedback.update({
+    const updated = await this.prisma.feedback.update({
       where: { id },
       data: { status: 'resolved', resolvedBy: resolverId, resolvedAt: new Date(), resolutionNote: note },
     });
+    await this.audit.record({ actorId: resolverId, action: 'feedback.resolve', entityType: 'feedback', entityId: id, after: { note: note ?? null } });
+    return updated;
   }
 }

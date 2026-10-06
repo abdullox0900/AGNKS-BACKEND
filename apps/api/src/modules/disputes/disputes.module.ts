@@ -4,9 +4,10 @@ import { ClientDisputesController, AdminDisputesController } from './disputes.co
 import { LedgerModule } from '@/modules/ledger/ledger.module';
 import { NotificationsModule } from '@/modules/notifications/notifications.module';
 import { AuthModule } from '@/modules/auth/auth.module';
+import { AuditModule } from '@/modules/audit/audit.module';
 
 @Module({
-  imports: [LedgerModule, NotificationsModule, AuthModule],
+  imports: [LedgerModule, NotificationsModule, AuthModule, AuditModule],
   controllers: [ClientDisputesController, AdminDisputesController],
   providers: [DisputesService],
 })

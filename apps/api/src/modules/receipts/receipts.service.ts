@@ -6,6 +6,7 @@ import { LedgerService } from '@/modules/ledger/ledger.service';
 import { SettingsService } from '@/modules/rules/settings.service';
 import { RateResolverService } from '@/modules/rules/rate-resolver.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
+import { AuditService } from '@/modules/audit/audit.service';
 import { distanceMeters } from '@/common/lib/geo';
 import { calcBonus } from '@/common/lib/money';
 import { SoliqFetchService, evaluateSoliqData } from './soliq-fetch.service';
@@ -34,6 +35,7 @@ export class ReceiptsService {
     private readonly rateResolver: RateResolverService,
     private readonly notifications: NotificationsService,
     private readonly soliq: SoliqFetchService,
+    private readonly audit: AuditService,
   ) {}
 
   async parse(qrText: string) {
@@ -261,6 +263,7 @@ export class ReceiptsService {
     const receipt = await this.prisma.receipt.findUnique({ where: { id } });
     if (!receipt) throw new AppError('NOT_FOUND');
     await this.prisma.receipt.update({ where: { id }, data: { largeAckAt: new Date(), largeAckBy: actorId } });
+    await this.audit.record({ actorId, action: 'receipt.ack_large', entityType: 'receipt', entityId: id, after: { amount: receipt.amount.toString() } });
     return { id };
   }
 
@@ -296,7 +299,7 @@ export class ReceiptsService {
     const finalAmount = amount !== undefined ? BigInt(amount) : receipt.amount;
     const finalBonus = amount !== undefined ? calcBonus(finalAmount, receipt.rateBps) : receipt.bonus;
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       if (amount !== undefined) {
         await tx.receipt.update({ where: { id }, data: { amount: finalAmount, bonus: finalBonus } });
       }
@@ -319,6 +322,14 @@ export class ReceiptsService {
       );
       return updated;
     });
+    await this.audit.record({
+      actorId: reviewerId,
+      action: 'review.approve',
+      entityType: 'receipt',
+      entityId: id,
+      after: { amount: finalAmount.toString(), bonus: finalBonus.toString(), note: note ?? null },
+    });
+    return result;
   }
 
   async reject(id: string, reviewerId: string, note: string) {
@@ -326,7 +337,7 @@ export class ReceiptsService {
     if (!receipt) throw new AppError('NOT_FOUND');
     if (receipt.status !== 'pending_review') return receipt;
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.receipt.update({
         where: { id },
         data: { status: 'rejected', reviewedBy: reviewerId, reviewedAt: new Date(), reviewNote: note },
@@ -334,6 +345,44 @@ export class ReceiptsService {
       await this.notifications.enqueue('client.receipt_rejected', { cardId: receipt.cardId, receiptId: id, note }, tx);
       return updated;
     });
+    await this.audit.record({ actorId: reviewerId, action: 'review.reject', entityType: 'receipt', entityId: id, after: { note } });
+    return result;
+  }
+
+  /** Receipts a reviewer already decided on (approved or rejected), newest decision first. */
+  async listReviewed(scopeStationId: string | null, cursor?: string, limit = 30) {
+    const rows = await this.prisma.receipt.findMany({
+      where: { reviewedBy: { not: null }, reviewedAt: { not: null }, ...(scopeStationId ? { stationId: scopeStationId } : {}) },
+      include: { station: true, terminal: true, card: { include: { user: true } } },
+      orderBy: [{ reviewedAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const ids = [...new Set(page.map((r) => r.reviewedBy!))];
+    const reviewers = await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, firstName: true, phone: true } });
+    const byId = new Map(reviewers.map((u) => [u.id, u]));
+    return {
+      items: page.map((r) => ({
+        id: r.id,
+        status: r.status,
+        clientName: r.card.user.firstName,
+        clientPhone: r.card.user.phone,
+        stationName: r.station.name,
+        terminalCode: r.terminal.code,
+        receiptAt: r.receiptAt.toISOString(),
+        amount: Number(r.amount),
+        bonus: Number(r.bonus),
+        reviewNote: r.reviewNote,
+        reviewedAt: r.reviewedAt!.toISOString(),
+        reviewerId: r.reviewedBy,
+        reviewerName: byId.get(r.reviewedBy!)?.firstName ?? null,
+        reviewerPhone: byId.get(r.reviewedBy!)?.phone ?? null,
+        soliqLink: this.soliqLink(r),
+      })),
+      nextCursor: hasMore ? page[page.length - 1].id : null,
+    };
   }
 
   private async preCheck(parsed: ParsedReceiptQr): Promise<PreCheckResult> {
