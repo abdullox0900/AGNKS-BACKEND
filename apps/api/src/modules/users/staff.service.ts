@@ -170,9 +170,13 @@ export class StaffService {
 
     await this.prisma.$transaction(async (tx) => {
       await tx.userRole.delete({ where: { id } });
-      // Only lock the person out when this was their last role (one user can hold several).
+      // Only lock the person out when this was their last role (one user can hold several) —
+      // and never when the same row is also a registered client, or they'd lose their bonus account too.
       const remaining = await tx.userRole.count({ where: { userId: role.userId } });
-      if (remaining === 0) await tx.user.update({ where: { id: role.userId }, data: { status: 'blocked' } });
+      if (remaining === 0) {
+        const user = await tx.user.findUnique({ where: { id: role.userId }, select: { registeredAt: true } });
+        if (!user?.registeredAt) await tx.user.update({ where: { id: role.userId }, data: { status: 'blocked' } });
+      }
     });
 
     await this.audit.record({ actorId: actor.userId, action: 'staff.remove', entityType: 'user_role', entityId: id, before: role });

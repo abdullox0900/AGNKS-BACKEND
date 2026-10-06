@@ -23,6 +23,7 @@ describe('DataFixGateService — the data-fix page password', () => {
     const { svc, stored } = setup();
     expect(await svc.status()).toEqual({ configured: false });
     expect(await code(svc.setup('seo1', 'my-gate-pass', 'wrong-login'))).toBe('AUTH_INVALID_CREDENTIALS');
+    await svc.setup('seo1', 'my-gate-pass', 'wrong-login').catch((e) => expect(e.details).toEqual({ reason: 'login_password' }));
     const res = await svc.setup('seo1', 'my-gate-pass', 'login-pass');
     expect(res.token).toBeTruthy();
     expect(await svc.status()).toEqual({ configured: true });

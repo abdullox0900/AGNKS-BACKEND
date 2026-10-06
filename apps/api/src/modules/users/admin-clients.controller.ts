@@ -15,8 +15,8 @@ export class AdminClientsController {
 
   @Get()
   @Roles('branch_manager', 'root_admin', 'seo')
-  search(@Query('q') q?: string, @Query('cursor') cursor?: string) {
-    return this.clients.search(q, cursor);
+  search(@Query('q') q?: string, @Query('cursor') cursor?: string, @Query('limit') limit?: string) {
+    return this.clients.search(q, cursor, limit ? Math.min(Math.max(Number(limit) || 20, 1), 200) : 20);
   }
 
   // root_admin may browse the list but not open a client (balance, history, receipts) — view-only role.

@@ -41,7 +41,7 @@ export class DataFixGateService {
   async setup(userId: string, password: string, loginPassword: string) {
     if (await this.hash()) throw new AppError('VALIDATION_ERROR', { message: 'gate_already_set' });
     // creating the lock needs the SEO's own login password once
-    if (!(await this.auth.verifyPassword(userId, loginPassword))) throw new AppError('AUTH_INVALID_CREDENTIALS');
+    if (!(await this.auth.verifyPassword(userId, loginPassword))) throw new AppError('AUTH_INVALID_CREDENTIALS', { reason: 'login_password' });
     await this.prisma.setting.upsert({
       where: { key: KEY },
       create: { key: KEY, value: { hash: await argon2.hash(password) }, updatedBy: userId },
