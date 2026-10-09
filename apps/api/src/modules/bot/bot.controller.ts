@@ -1,10 +1,11 @@
-import { Controller, HttpCode, Inject, Logger, Post, Req, Res } from '@nestjs/common';
+import { Controller, HttpCode, Inject, Logger, Optional, Param, Post, Req, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { webhookCallback, type Bot } from 'grammy';
-import { CLIENT_BOT, STAFF_BOT } from '@/infra/telegram/telegram.constants';
+import { CLIENT_BOT, CLIENT_BOTS, STAFF_BOT } from '@/infra/telegram/telegram.constants';
+import { MAIN_BOT_KEY, type ClientBotRegistry } from '@/infra/telegram/client-bots';
 import { SkipIdempotency } from '@/common/decorators/skip-idempotency.decorator';
 
 type ExpressWebhookHandler = (req: Request, res: Response) => Promise<unknown>;
@@ -24,14 +25,20 @@ export class BotController {
   private readonly logger = new Logger(BotController.name);
   private readonly clientHandler: ExpressWebhookHandler | null;
   private readonly staffHandler: ExpressWebhookHandler | null;
+  /** per-station client bots, by key */
+  private readonly stationHandlers = new Map<string, ExpressWebhookHandler>();
   private readonly secretDigest: Buffer | null;
 
   constructor(
     @Inject(CLIENT_BOT) clientBot: Bot | null,
     @Inject(STAFF_BOT) staffBot: Bot | null,
     config: ConfigService,
+    @Optional() @Inject(CLIENT_BOTS) registry?: ClientBotRegistry,
   ) {
     this.clientHandler = clientBot ? (webhookCallback(clientBot, 'express') as ExpressWebhookHandler) : null;
+    for (const entry of registry?.all() ?? []) {
+      if (entry.key !== MAIN_BOT_KEY) this.stationHandlers.set(entry.key, webhookCallback(entry.bot, 'express') as ExpressWebhookHandler);
+    }
     this.staffHandler = staffBot ? (webhookCallback(staffBot, 'express') as ExpressWebhookHandler) : null;
 
     // Required in production (see env.validation.ts); outside production an
@@ -46,6 +53,14 @@ export class BotController {
   @HttpCode(200)
   client(@Req() req: Request, @Res() res: Response) {
     return this.handle('client-bot', this.clientHandler, req, res);
+  }
+
+  /** One webhook per station bot: /webhook/client-bot/<key> (the original bot stays on /webhook/client-bot). */
+  @Post('client-bot/:key')
+  @HttpCode(200)
+  clientStation(@Param('key') key: string, @Req() req: Request, @Res() res: Response) {
+    if (key === MAIN_BOT_KEY) return this.handle('client-bot', this.clientHandler, req, res);
+    return this.handle(`client-bot:${key}`, this.stationHandlers.get(key) ?? null, req, res);
   }
 
   @Post('staff-bot')

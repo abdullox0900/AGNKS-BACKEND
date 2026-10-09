@@ -1,6 +1,7 @@
-import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import type { Bot } from 'grammy';
-import { CLIENT_BOT } from '@/infra/telegram/telegram.constants';
+import { CLIENT_BOT, CLIENT_BOTS } from '@/infra/telegram/telegram.constants';
+import { MAIN_BOT_KEY, type ClientBotRegistry } from '@/infra/telegram/client-bots';
 import { UsersService } from '@/modules/users/users.service';
 
 type Lang = 'uz' | 'ru';
@@ -68,38 +69,48 @@ const tgLang = (code?: string): Lang => (code?.toLowerCase().startsWith('ru') ? 
 @Injectable()
 export class ClientBotService implements OnModuleInit {
   private readonly logger = new Logger(ClientBotService.name);
-  private readonly awaitingName = new Set<number>();
-  private readonly pendingName = new Map<number, string>();
+  // Conversation state is per bot: the same person may be in the middle of the flow in two bots at once.
+  private readonly awaitingName = new Set<string>();
+  private readonly pendingName = new Map<string, string>();
 
   constructor(
     @Inject(CLIENT_BOT) private readonly bot: Bot | null,
     private readonly users: UsersService,
+    @Optional() @Inject(CLIENT_BOTS) private readonly registry?: ClientBotRegistry,
   ) {}
 
   onModuleInit(): void {
-    if (!this.bot) return;
+    // Every client bot — the original one and the per-station ones — gets the same behaviour.
+    const bots = this.registry ? this.registry.all().map((e) => ({ key: e.key, bot: e.bot as Bot })) : this.bot ? [{ key: MAIN_BOT_KEY, bot: this.bot }] : [];
+    for (const { key, bot } of bots) this.register(bot, key);
+    if (bots.length) this.logger.log(`Client bot handlers registered (${bots.map((b) => b.key).join(', ')})`);
+  }
 
-    this.bot.command('start', async (ctx) => {
+  private register(bot: Bot, botKey: string): void {
+    const state = (id: number) => `${botKey}:${id}`;
+
+    bot.command('start', async (ctx) => {
       if (!ctx.from) return;
       const lang = tgLang(ctx.from.language_code);
+      await this.users.setBotKey(ctx.from.id, botKey).catch(() => undefined);
 
       // Already registered: just point to the app. Re-registering would be pointless (and the account,
       // card and bonuses are keyed by the Telegram id anyway, so nothing is lost either way).
       const existing = await this.users.findRegisteredByTg(ctx.from.id);
       if (existing) {
-        this.awaitingName.delete(ctx.from.id);
-        this.pendingName.delete(ctx.from.id);
+        this.awaitingName.delete(state(ctx.from.id));
+        this.pendingName.delete(state(ctx.from.id));
         await ctx.reply(TEXT[existing.lang].already(existing.firstName), { reply_markup: { remove_keyboard: true } });
         return;
       }
 
-      this.awaitingName.add(ctx.from.id);
-      this.pendingName.delete(ctx.from.id);
+      this.awaitingName.add(state(ctx.from.id));
+      this.pendingName.delete(state(ctx.from.id));
       await ctx.reply(TEXT[lang].welcome(ctx.from.first_name?.slice(0, 40) ?? ''), { reply_markup: { remove_keyboard: true } });
     });
 
-    this.bot.on('message:text', async (ctx) => {
-      if (!ctx.from || !this.awaitingName.has(ctx.from.id)) return;
+    bot.on('message:text', async (ctx) => {
+      if (!ctx.from || !this.awaitingName.has(state(ctx.from.id))) return;
       const t = TEXT[tgLang(ctx.from.language_code)];
 
       const firstName = ctx.message.text.trim().slice(0, 40);
@@ -108,8 +119,8 @@ export class ClientBotService implements OnModuleInit {
         return;
       }
 
-      this.pendingName.set(ctx.from.id, firstName);
-      this.awaitingName.delete(ctx.from.id);
+      this.pendingName.set(state(ctx.from.id), firstName);
+      this.awaitingName.delete(state(ctx.from.id));
       await ctx.reply(t.askPhone, {
         reply_markup: {
           keyboard: [[{ text: t.sharePhone, request_contact: true }]],
@@ -119,7 +130,7 @@ export class ClientBotService implements OnModuleInit {
       });
     });
 
-    this.bot.on('message:contact', async (ctx) => {
+    bot.on('message:contact', async (ctx) => {
       const lang = tgLang(ctx.from?.language_code);
       const t = TEXT[lang];
       const contact = ctx.message.contact;
@@ -129,9 +140,10 @@ export class ClientBotService implements OnModuleInit {
         return;
       }
 
-      const firstName = this.pendingName.get(ctx.from.id) ?? ctx.from.first_name ?? 'Mijoz';
+      const firstName = this.pendingName.get(state(ctx.from.id)) ?? ctx.from.first_name ?? 'Mijoz';
       const result = await this.users.registerFromBot(ctx.from.id, firstName, contact.phone_number, lang);
-      this.pendingName.delete(ctx.from.id);
+      this.pendingName.delete(state(ctx.from.id));
+      if (result === 'registered' || result === 'already') await this.users.setBotKey(ctx.from.id, botKey).catch(() => undefined);
 
       const remove = { reply_markup: { remove_keyboard: true as const } };
       if (result === 'registered') await ctx.reply(t.done, remove);
@@ -141,12 +153,10 @@ export class ClientBotService implements OnModuleInit {
     });
 
     // A failing handler must never leave the person with a silent bot.
-    this.bot.catch(async (err) => {
-      this.logger.error(`client bot update ${err.ctx.update.update_id} failed: ${err.message}`, err.error instanceof Error ? err.error.stack : undefined);
+    bot.catch(async (err) => {
+      this.logger.error(`client bot ${botKey} update ${err.ctx.update.update_id} failed: ${err.message}`, err.error instanceof Error ? err.error.stack : undefined);
       const lang = tgLang(err.ctx.from?.language_code);
       await err.ctx.reply(TEXT[lang].error, { reply_markup: { remove_keyboard: true } }).catch(() => undefined);
     });
-
-    this.logger.log('Client bot handlers registered');
   }
 }

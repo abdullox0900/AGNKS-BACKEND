@@ -123,6 +123,8 @@ model User {
   lang       Lang       @default(uz)
   status     UserStatus @default(active)
   registeredAt DateTime? @map("registered_at")
+  /// which client bot (main / a station key) the person last opened the app from — notifications go out through it
+  botKey     String?    @map("bot_key")
   createdAt  DateTime   @default(now()) @map("created_at")
 
   roles       UserRole[]

@@ -26,7 +26,12 @@ export class ClientAuthGuard implements CanActivate {
     // "not registered" is an onboarding state (no phone/consent yet), not an
     // auth failure. Individual endpoints that require a completed profile
     // enforce that themselves via RequireRegisteredGuard.
-    const user = await this.findOrCreateUser(parsed.user.id, parsed.user.first_name ?? '');
+    const user = await this.findOrCreateUser(parsed.user.id, parsed.user.first_name ?? '', parsed.botKey);
+
+    // Remember which bot they opened the app from: notifications go back out through that same bot.
+    if (user.botKey !== parsed.botKey) {
+      await this.prisma.user.update({ where: { id: user.id }, data: { botKey: parsed.botKey } }).catch(() => undefined);
+    }
 
     if (user.status !== 'active') {
       throw new AppError('AUTH_FORBIDDEN', { reason: 'user_blocked' });
@@ -45,7 +50,7 @@ export class ClientAuthGuard implements CanActivate {
     return true;
   }
 
-  private async findOrCreateUser(tgUserId: number, firstName: string) {
+  private async findOrCreateUser(tgUserId: number, firstName: string, botKey: string) {
     const existing = await this.prisma.user.findUnique({
       where: { tgUserId: BigInt(tgUserId) },
       include: { card: true },
@@ -57,6 +62,7 @@ export class ClientAuthGuard implements CanActivate {
         data: {
           tgUserId: BigInt(tgUserId),
           firstName,
+          botKey,
           card: { create: { number: generateCardNumber() } },
         },
         include: { card: true },

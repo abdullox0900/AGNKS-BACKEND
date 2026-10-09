@@ -1,7 +1,8 @@
 import { Global, Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Bot } from 'grammy';
-import { CLIENT_BOT, STAFF_BOT } from './telegram.constants';
+import { CLIENT_BOT, CLIENT_BOTS, STAFF_BOT } from './telegram.constants';
+import { ClientBotRegistry, clientBotTokens, MAIN_BOT_KEY } from './client-bots';
 import { TelegramInitDataService } from './init-data.service';
 
 const logger = new Logger('TelegramModule');
@@ -24,9 +25,24 @@ function createBot(token: string | undefined, name: string): Bot | null {
 @Module({
   providers: [
     {
-      provide: CLIENT_BOT,
+      provide: CLIENT_BOTS,
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => createBot(config.get('TELEGRAM_CLIENT_BOT_TOKEN'), 'client-bot'),
+      useFactory: (config: ConfigService) => {
+        const tokens = clientBotTokens(config.get('TELEGRAM_CLIENT_BOT_TOKEN'), config.get('TELEGRAM_EXTRA_BOT_TOKENS'));
+        if (tokens.length === 0) logger.warn('no client bot token configured — client bots disabled');
+        const entries = tokens.flatMap((t) => {
+          const bot = createBot(t.token, t.key === MAIN_BOT_KEY ? 'client-bot' : `client-bot:${t.key}`);
+          return bot ? [{ ...t, bot }] : [];
+        });
+        logger.log(`client bots: ${entries.map((e) => e.key).join(', ') || 'none'}`);
+        return new ClientBotRegistry(entries);
+      },
+    },
+    {
+      // the original bot, kept as its own token for code that only needs "the" client bot
+      provide: CLIENT_BOT,
+      inject: [CLIENT_BOTS],
+      useFactory: (registry: ClientBotRegistry) => registry.get(MAIN_BOT_KEY)?.bot ?? null,
     },
     {
       provide: STAFF_BOT,
@@ -35,6 +51,6 @@ function createBot(token: string | undefined, name: string): Bot | null {
     },
     TelegramInitDataService,
   ],
-  exports: [CLIENT_BOT, STAFF_BOT, TelegramInitDataService],
+  exports: [CLIENT_BOT, CLIENT_BOTS, STAFF_BOT, TelegramInitDataService],
 })
 export class TelegramModule {}

@@ -1,9 +1,10 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Inject, Logger } from '@nestjs/common';
+import { Inject, Logger, Optional } from '@nestjs/common';
 import type { Job } from 'bullmq';
 import { GrammyError, type Bot } from 'grammy';
 import { QUEUE_NAMES } from '@/infra/queue/queue.constants';
-import { CLIENT_BOT, STAFF_BOT } from '@/infra/telegram/telegram.constants';
+import { CLIENT_BOT, CLIENT_BOTS, STAFF_BOT } from '@/infra/telegram/telegram.constants';
+import type { ClientBotRegistry } from '@/infra/telegram/client-bots';
 import { PrismaService } from '@/infra/prisma/prisma.service';
 import { isHtmlMessage, renderMessage } from '@/modules/notifications/message-renderer';
 import { STAFF_KIND_ALLOWED, type OutboxKind } from '@/modules/notifications/notifications.service';
@@ -24,6 +25,7 @@ export class OutboxProcessor extends WorkerHost {
     private readonly prisma: PrismaService,
     @Inject(CLIENT_BOT) private readonly clientBot: Bot | null,
     @Inject(STAFF_BOT) private readonly staffBot: Bot | null,
+    @Optional() @Inject(CLIENT_BOTS) private readonly registry?: ClientBotRegistry,
   ) {
     super();
   }
@@ -56,8 +58,8 @@ export class OutboxProcessor extends WorkerHost {
       }
       const recipients = await this.resolveRecipients(kind, payload);
 
-      const bot = kind.startsWith('staff.') ? this.staffBot : this.clientBot;
-      if (!bot) throw new Error('bot_unavailable');
+      const isStaff = kind.startsWith('staff.');
+      if (isStaff ? !this.staffBot : !this.clientBot && !this.registry?.fallback()) throw new Error('bot_unavailable');
 
       if (recipients.length === 0) {
         // No one to notify (e.g. client has no linked Telegram account yet) —
@@ -67,10 +69,15 @@ export class OutboxProcessor extends WorkerHost {
       }
 
       // each recipient gets the text in their own language (the one chosen in the webapp)
-      const langs = await this.languagesOf(recipients);
+      const people = await this.peopleOf(recipients);
       const options = isHtmlMessage(kind) ? { parse_mode: 'HTML' as const } : undefined;
       const results = await Promise.allSettled(
-        recipients.map((tgUserId) => bot.api.sendMessage(tgUserId, renderMessage(kind, payload, langs.get(tgUserId) ?? 'uz'), options)),
+        recipients.map((tgUserId) => {
+          const person = people.get(tgUserId);
+          // clients are written to by the bot they opened the app from; everyone else (and unknown) by the main one
+          const bot = isStaff ? this.staffBot! : (this.registry?.get(person?.botKey) ?? this.registry?.fallback())?.bot ?? this.clientBot!;
+          return bot.api.sendMessage(tgUserId, renderMessage(kind, payload, person?.lang ?? 'uz'), options);
+        }),
       );
       const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
       for (const failure of failures) {
@@ -104,9 +111,9 @@ export class OutboxProcessor extends WorkerHost {
     }
   }
 
-  private async languagesOf(tgIds: number[]): Promise<Map<number, 'uz' | 'ru'>> {
-    const users = await this.prisma.user.findMany({ where: { tgUserId: { in: tgIds.map((n) => BigInt(n)) } }, select: { tgUserId: true, lang: true } });
-    return new Map(users.map((u) => [Number(u.tgUserId), u.lang as 'uz' | 'ru']));
+  private async peopleOf(tgIds: number[]): Promise<Map<number, { lang: 'uz' | 'ru'; botKey: string | null }>> {
+    const users = await this.prisma.user.findMany({ where: { tgUserId: { in: tgIds.map((n) => BigInt(n)) } }, select: { tgUserId: true, lang: true, botKey: true } });
+    return new Map(users.map((u) => [Number(u.tgUserId), { lang: u.lang as 'uz' | 'ru', botKey: u.botKey }]));
   }
 
   private async resolveRecipients(kind: OutboxKind, payload: Record<string, unknown>): Promise<number[]> {

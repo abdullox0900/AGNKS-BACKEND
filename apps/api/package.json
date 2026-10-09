@@ -18,6 +18,7 @@
     "prisma:studio": "prisma studio",
     "prisma:seed": "ts-node --transpile-only -r tsconfig-paths/register prisma/seed.ts",
     "seed": "ts-node --transpile-only -r tsconfig-paths/register prisma/seed.ts",
+    "bots:setup": "ts-node --transpile-only -r tsconfig-paths/register scripts/setup-bots.ts",
     "start:worker": "node dist/worker.js",
     "dev:worker": "nest start worker --watch"
   },

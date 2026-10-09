@@ -10,7 +10,7 @@ function setup(registered: Registered, registerResult: string = 'registered') {
     on: (name: string, h: Handler) => handlers.set(`on:${name}`, h),
     catch: (h: Handler) => handlers.set('catch', h),
   };
-  const users = { findRegisteredByTg: jest.fn().mockResolvedValue(registered), registerFromBot: jest.fn().mockResolvedValue(registerResult) };
+  const users = { setBotKey: jest.fn().mockResolvedValue(undefined), findRegisteredByTg: jest.fn().mockResolvedValue(registered), registerFromBot: jest.fn().mockResolvedValue(registerResult) };
   new ClientBotService(bot as never, users as never).onModuleInit();
   const reply = jest.fn().mockResolvedValue(undefined);
   const ctx = (extra: Record<string, unknown> = {}, lang = 'uz') => ({

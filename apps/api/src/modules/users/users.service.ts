@@ -165,6 +165,11 @@ export class UsersService {
     if (!any) await db.consent.create({ data: { userId, type: 'marketing', version: '1' } });
   }
 
+  /** Records the bot a person is talking to (no-op when they have no row yet — registration creates it). */
+  async setBotKey(tgUserId: number, botKey: string): Promise<void> {
+    await this.prisma.user.updateMany({ where: { tgUserId: BigInt(tgUserId), OR: [{ botKey: null }, { botKey: { not: botKey } }] }, data: { botKey } });
+  }
+
   /** A client who finished bot registration (and hasn't logged out of the webapp). */
   findRegisteredByTg(tgUserId: number) {
     return this.prisma.user.findFirst({

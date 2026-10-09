@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHmac } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { AppError } from '@agnks/types';
+import { clientBotTokens } from './client-bots';
 
 export interface TelegramInitDataUser {
   id: number;
@@ -15,6 +16,8 @@ export interface ParsedInitData {
   user: TelegramInitDataUser;
   authDate: number;
   raw: URLSearchParams;
+  /** which bot signed it: 'main' / a station key for client data, 'staff' for the staff bot */
+  botKey: string;
 }
 
 export type InitDataBotKind = 'client' | 'staff';
@@ -32,7 +35,7 @@ export class TelegramInitDataService {
       throw new AppError('AUTH_INVALID_INIT_DATA');
     }
 
-    const botToken = this.tokenFor(botKind);
+    const candidates = this.tokensFor(botKind);
     const params = new URLSearchParams(initData);
     const hash = params.get('hash');
     if (!hash) {
@@ -47,10 +50,13 @@ export class TelegramInitDataService {
     pairs.sort();
     const dataCheckString = pairs.join('\n');
 
-    const secretKey = createHmac('sha256', 'WebAppData').update(botToken).digest();
-    const computedHash = createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
-
-    if (computedHash !== hash) {
+    // The data is signed with the token of whichever bot opened the app — try each configured one.
+    const signer = candidates.find(({ token }) => {
+      const secretKey = createHmac('sha256', 'WebAppData').update(token).digest();
+      const computed = createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+      return computed.length === hash.length && timingSafeEqual(Buffer.from(computed), Buffer.from(hash));
+    });
+    if (!signer) {
       throw new AppError('AUTH_INVALID_INIT_DATA');
     }
 
@@ -73,15 +79,17 @@ export class TelegramInitDataService {
       throw new AppError('AUTH_INVALID_INIT_DATA', { reason: 'malformed_user' });
     }
 
-    return { user, authDate, raw: params };
+    return { user, authDate, raw: params, botKey: signer.key };
   }
 
-  private tokenFor(kind: InitDataBotKind): string {
-    const key = kind === 'client' ? 'TELEGRAM_CLIENT_BOT_TOKEN' : 'TELEGRAM_STAFF_BOT_TOKEN';
-    const token = this.config.get<string>(key);
-    if (!token) {
-      throw new AppError('INTERNAL_ERROR', { reason: `${key} not configured` });
+  private tokensFor(kind: InitDataBotKind): { key: string; token: string }[] {
+    const tokens =
+      kind === 'client'
+        ? clientBotTokens(this.config.get<string>('TELEGRAM_CLIENT_BOT_TOKEN'), this.config.get<string>('TELEGRAM_EXTRA_BOT_TOKENS'))
+        : [{ key: 'staff', token: this.config.get<string>('TELEGRAM_STAFF_BOT_TOKEN') ?? '' }].filter((t) => t.token);
+    if (tokens.length === 0) {
+      throw new AppError('INTERNAL_ERROR', { reason: `${kind === 'client' ? 'TELEGRAM_CLIENT_BOT_TOKEN' : 'TELEGRAM_STAFF_BOT_TOKEN'} not configured` });
     }
-    return token;
+    return tokens;
   }
 }
