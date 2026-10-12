@@ -81,6 +81,12 @@ export const setMethanePriceSchema = z.object({
 });
 export type SetMethanePriceDto = z.infer<typeof setMethanePriceSchema>;
 
+/** Smallest bonus amount a client can redeem at the till (so'm). 1 … 100 mln; the controller also keeps it ≤ spend.max_amount. */
+export const setSpendMinSchema = z.object({
+  amount: z.number().int().min(1).max(100_000_000),
+});
+export type SetSpendMinDto = z.infer<typeof setSpendMinSchema>;
+
 export const createPromotionSchema = z
   .object({
     name: z.string().trim().min(2).max(120),

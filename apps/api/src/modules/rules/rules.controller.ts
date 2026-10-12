@@ -4,6 +4,7 @@ import {
   impactPreviewSchema,
   setBaseRateSchema,
   setMethanePriceSchema,
+  setSpendMinSchema,
   settingValueSchema,
   SETTING_KEYS,
   settingsSchemas,
@@ -11,6 +12,7 @@ import {
   type ImpactPreviewDto,
   type SetBaseRateDto,
   type SetMethanePriceDto,
+  type SetSpendMinDto,
   type SettingKey,
   type PromotionStatus,
 } from '@agnks/types';
@@ -35,11 +37,29 @@ export class RulesController {
   @Get('bonus/settings')
   @Roles('branch_manager', 'root_admin', 'seo')
   async getBonusSettings() {
-    const [baseRateBps, methanePrice] = await Promise.all([
+    const [baseRateBps, methanePrice, spendMinAmount, spendMaxAmount] = await Promise.all([
       this.settings.get('bonus.base_rate_bps'),
       this.settings.get('methane.price'),
+      this.settings.get('spend.min_amount'),
+      this.settings.get('spend.max_amount'),
     ]);
-    return { baseRateBps, methanePrice };
+    return { baseRateBps, methanePrice, spendMinAmount, spendMaxAmount };
+  }
+
+  /**
+   * Minimum bonus a client can redeem. Read live by the spend flow (cashier lookup + submit) and shown to clients
+   * through /me.spendMinAmount ("Kamida … kerak"), so changing it here changes both at once.
+   */
+  @Put('bonus/spend-min')
+  @Roles('root_admin', 'seo')
+  async setSpendMin(
+    @Body(new ZodValidationPipe(setSpendMinSchema)) dto: SetSpendMinDto,
+    @CurrentStaff() actor: StaffActor,
+  ) {
+    const max = await this.settings.get('spend.max_amount');
+    if (dto.amount > max) throw new AppError('VALIDATION_ERROR', { message: 'spend_min_above_max', max });
+    await this.settings.set('spend.min_amount', dto.amount, actor.userId);
+    return { spendMinAmount: dto.amount, spendMaxAmount: max };
   }
 
   /** Display-only price for the client app's "Bugungi metan narxi" card; nothing else reads it. */
