@@ -3,7 +3,7 @@ import { AppError, type CreateChangelogDto, type UpdateChangelogDto } from '@agn
 import { PrismaService } from '@/infra/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
 
-const PAGE = 10;
+const PAGE = 30;
 const clean = (v: string | null | undefined) => (v ? v.trim() || null : null);
 
 /** "Yangilanishlar": release notes the SEO writes and every dashboard user reads, newest first. */
@@ -14,35 +14,53 @@ export class ChangelogService {
     private readonly audit: AuditService,
   ) {}
 
+  /** Light rows for the list (title, version, date, author) — the text and the picture only come with `get`. */
   async list(cursor?: string) {
     const rows = await this.prisma.changelogPost.findMany({
+      select: { id: true, title: true, version: true, createdBy: true, createdAt: true },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: PAGE + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
     const hasMore = rows.length > PAGE;
     const page = hasMore ? rows.slice(0, PAGE) : rows;
-    const authors = await this.prisma.user.findMany({
-      where: { id: { in: [...new Set(page.map((r) => r.createdBy))] } },
-      select: { id: true, firstName: true },
-    });
-    const name = new Map(authors.map((a) => [a.id, a.firstName]));
+    const names = await this.authorNames(page.map((r) => r.createdBy));
     return {
       items: page.map((r) => ({
         id: r.id,
         title: r.title,
-        body: r.body,
         version: r.version,
-        linkUrl: r.linkUrl,
-        linkLabel: r.linkLabel,
-        image: r.image,
         authorId: r.createdBy,
-        authorName: name.get(r.createdBy) ?? null,
+        authorName: names.get(r.createdBy) ?? null,
         createdAt: r.createdAt.toISOString(),
-        updatedAt: r.updatedAt.toISOString(),
       })),
       nextCursor: hasMore ? page[page.length - 1].id : null,
     };
+  }
+
+  /** One whole post: text, link and picture. */
+  async get(id: string) {
+    const r = await this.prisma.changelogPost.findUnique({ where: { id } });
+    if (!r) throw new AppError('NOT_FOUND');
+    const names = await this.authorNames([r.createdBy]);
+    return {
+      id: r.id,
+      title: r.title,
+      body: r.body,
+      version: r.version,
+      linkUrl: r.linkUrl,
+      linkLabel: r.linkLabel,
+      image: r.image,
+      authorId: r.createdBy,
+      authorName: names.get(r.createdBy) ?? null,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    };
+  }
+
+  private async authorNames(ids: string[]) {
+    const authors = await this.prisma.user.findMany({ where: { id: { in: [...new Set(ids)] } }, select: { id: true, firstName: true } });
+    return new Map(authors.map((a) => [a.id, a.firstName]));
   }
 
   async create(dto: CreateChangelogDto, actorId: string) {

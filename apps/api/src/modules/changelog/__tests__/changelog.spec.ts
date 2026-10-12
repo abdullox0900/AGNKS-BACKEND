@@ -66,14 +66,25 @@ describe('ChangelogService', () => {
     await expect(missing.service.update('nope', { body: 'x' }, 'u1')).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
-  it('lists newest first with author names and a cursor when there is more', async () => {
+  it('lists light rows (no text, no picture) newest first with author names and a cursor when there is more', async () => {
     const { service, prisma } = setup();
-    const row = (i: number) => ({ id: `p${i}`, title: `T${i}`, body: 'b', version: null, linkUrl: null, linkLabel: null, image: null, createdBy: 'u1', createdAt: new Date(2026, 9, 20 - i), updatedAt: new Date(2026, 9, 20 - i) });
-    prisma.changelogPost.findMany.mockResolvedValue(Array.from({ length: 11 }, (_, i) => row(i)));
+    const row = (i: number) => ({ id: `p${i}`, title: `T${i}`, version: null, createdBy: 'u1', createdAt: new Date(2026, 9, 20 - i) });
+    prisma.changelogPost.findMany.mockResolvedValue(Array.from({ length: 31 }, (_, i) => row(i)));
     const res = await service.list();
-    expect(res.items).toHaveLength(10);
-    expect(res.items[0]).toMatchObject({ id: 'p0', authorName: 'Abdulloh' });
-    expect(res.nextCursor).toBe('p9');
-    expect(prisma.changelogPost.findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 11 }));
+    expect(res.items).toHaveLength(30);
+    expect(res.items[0]).toEqual({ id: 'p0', title: 'T0', version: null, authorId: 'u1', authorName: 'Abdulloh', createdAt: new Date(2026, 9, 20).toISOString() });
+    expect(res.items[0]).not.toHaveProperty('body');
+    expect(res.items[0]).not.toHaveProperty('image');
+    expect(res.nextCursor).toBe('p29');
+    expect(prisma.changelogPost.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 31, select: { id: true, title: true, version: true, createdBy: true, createdAt: true } }),
+    );
+  });
+
+  it('returns a whole post by id, or NOT_FOUND', async () => {
+    const full = { id: 'p1', title: 'T', body: 'Matn', version: '1.5', linkUrl: 'https://metango.uz', linkLabel: null, image: PNG, createdBy: 'u1', createdAt: new Date(2026, 9, 12), updatedAt: new Date(2026, 9, 12) };
+    const found = setup(full);
+    expect(await found.service.get('p1')).toMatchObject({ id: 'p1', body: 'Matn', image: PNG, linkUrl: 'https://metango.uz', authorName: 'Abdulloh' });
+    await expect(setup(null).service.get('nope')).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 });

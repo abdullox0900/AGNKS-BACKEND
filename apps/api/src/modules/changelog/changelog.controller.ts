@@ -20,6 +20,12 @@ export class ChangelogController {
     return this.changelog.list(cursor);
   }
 
+  @Get(':id')
+  @Roles('branch_manager', 'root_admin', 'seo')
+  get(@Param('id') id: string) {
+    return this.changelog.get(id);
+  }
+
   @Post()
   @Roles('seo')
   create(@Body(new ZodValidationPipe(createChangelogSchema)) dto: CreateChangelogDto, @CurrentStaff() actor: StaffActor) {
