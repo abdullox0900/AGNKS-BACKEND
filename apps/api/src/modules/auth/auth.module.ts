@@ -8,10 +8,11 @@ import { TokenService } from './token.service';
 import { CryptoService } from '@/common/crypto/crypto.service';
 import { ClientAuthGuard } from '@/common/guards/client-auth.guard';
 import { StaffAuthGuard } from '@/common/guards/staff-auth.guard';
+import { AuditModule } from '@/modules/audit/audit.module';
 
 @Global()
 @Module({
-  imports: [JwtModule.register({})],
+  imports: [JwtModule.register({}), AuditModule],
   controllers: [CashierAuthController, DashboardAuthController],
   providers: [
     PinAuthService,

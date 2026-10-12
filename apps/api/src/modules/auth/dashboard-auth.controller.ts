@@ -1,11 +1,13 @@
-import { Body, Controller, Get, HttpCode, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AppError } from '@agnks/types';
 import {
   dashboardLoginSchema,
   changePasswordSchema,
+  updateProfileSchema,
   type DashboardLoginDto,
   type ChangePasswordDto,
+  type UpdateProfileDto,
 } from '@agnks/types';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import { StaffAuthGuard } from '@/common/guards/staff-auth.guard';
@@ -13,6 +15,7 @@ import { CurrentStaff } from '@/common/decorators/current-actor.decorator';
 import type { StaffActor } from '@/common/types/actor';
 import { DashboardAuthService } from './dashboard-auth.service';
 import { TokenService } from './token.service';
+import { AuditService } from '@/modules/audit/audit.service';
 
 const REFRESH_COOKIE = 'admin_refresh';
 const REFRESH_COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -22,6 +25,7 @@ export class DashboardAuthController {
   constructor(
     private readonly auth: DashboardAuthService,
     private readonly tokens: TokenService,
+    private readonly audit: AuditService,
   ) {}
 
   @Post('login')
@@ -36,6 +40,31 @@ export class DashboardAuthController {
   @UseGuards(StaffAuthGuard)
   me(@CurrentStaff() actor: StaffActor) {
     return this.auth.me(actor.userId);
+  }
+
+  /** Own profile (name, about me, avatar). Every dashboard role may edit their own — it is not part of the root_admin read-only rule. */
+  @Patch('me')
+  @UseGuards(StaffAuthGuard)
+  async updateMe(@CurrentStaff() actor: StaffActor, @Body(new ZodValidationPipe(updateProfileSchema)) dto: UpdateProfileDto) {
+    const { changed, before, after } = await this.auth.updateProfile(actor.userId, dto);
+    if (changed.length > 0) {
+      await this.audit.record({
+        actorId: actor.userId,
+        action: 'staff.profile',
+        entityType: 'user',
+        entityId: actor.userId,
+        before: { ...(changed.includes('firstName') ? { firstName: before.firstName } : {}), ...(changed.includes('bio') ? { bio: before.bio } : {}) },
+        after: { ...(changed.includes('firstName') ? { firstName: after.firstName } : {}), ...(changed.includes('bio') ? { bio: after.bio } : {}), ...(changed.includes('avatar') ? { avatar: dto.avatar ? 'yangilandi' : "o'chirildi" } : {}) },
+      });
+    }
+    return this.auth.me(actor.userId);
+  }
+
+  /** The caller's own recent actions (never anyone else's), for the profile page. */
+  @Get('me/activity')
+  @UseGuards(StaffAuthGuard)
+  activity(@CurrentStaff() actor: StaffActor) {
+    return this.audit.list({ actor: actor.userId, limit: 10 });
   }
 
   @Post('change-password')

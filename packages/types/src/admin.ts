@@ -14,6 +14,21 @@ export const changePasswordSchema = z.object({
 });
 export type ChangePasswordDto = z.infer<typeof changePasswordSchema>;
 
+/** Own dashboard profile. The avatar is a small data URL the browser already resized (≈ 10–40 KB; the JSON body limit is 100 KB). */
+export const updateProfileSchema = z
+  .object({
+    firstName: z.string().trim().min(2).max(40).optional(),
+    bio: z.string().trim().max(300).nullable().optional(),
+    avatar: z
+      .string()
+      .regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/)
+      .max(80_000)
+      .nullable()
+      .optional(),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), { message: 'empty_update' });
+export type UpdateProfileDto = z.infer<typeof updateProfileSchema>;
+
 export const createStaffSchema = z.object({
   phone: z.string().regex(/^\+998\d{9}$/),
   firstName: z.string().trim().min(2).max(40),

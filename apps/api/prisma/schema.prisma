@@ -131,10 +131,24 @@ model User {
   credentials StaffCredentials?
   consents    Consent[]
   card        Card?
+  profile     StaffProfile?
 
   auditActions AuditLog[] @relation("audit_actor")
 
   @@map("users")
+}
+
+/// Dashboard profile of a staff member: a short "about me" and a small avatar (a resized JPEG/PNG/WebP data URL).
+/// Its own table so the (rarely needed) avatar never rides along with every `users` query.
+model StaffProfile {
+  userId    String   @id @map("user_id")
+  bio       String?
+  avatar    String?
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("staff_profiles")
 }
 
 model UserRole {

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as argon2 from 'argon2';
-import { AppError, isNetworkWideRole, type StaffRole } from '@agnks/types';
+import { AppError, isNetworkWideRole, type StaffRole, type UpdateProfileDto } from '@agnks/types';
 import { PrismaService } from '@/infra/prisma/prisma.service';
 import { CryptoService } from '@/common/crypto/crypto.service';
 import { TokenService } from './token.service';
@@ -58,7 +58,7 @@ export class DashboardAuthService {
   async me(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { roles: { include: { station: true } } },
+      include: { roles: { include: { station: true } }, profile: true },
     });
     const role = user?.roles.find((r) => DASHBOARD_ROLES.includes(r.role));
     if (!user || !role) throw new AppError('NOT_FOUND');
@@ -69,7 +69,39 @@ export class DashboardAuthService {
       role: role.role,
       stationId: role.stationId,
       stationName: role.station?.name ?? null,
+      bio: user.profile?.bio ?? null,
+      avatar: user.profile?.avatar ?? null,
+      createdAt: user.createdAt.toISOString(),
     };
+  }
+
+  /**
+   * Own profile: display name, "about me", avatar. Returns which fields changed (names only — never the avatar bytes)
+   * so the caller can write a compact audit entry. `undefined` = leave as is, `null` = clear.
+   */
+  async updateProfile(userId: string, dto: UpdateProfileDto): Promise<{ changed: string[]; before: { firstName: string; bio: string | null }; after: { firstName: string; bio: string | null } }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { profile: true } });
+    if (!user) throw new AppError('NOT_FOUND');
+    const before = { firstName: user.firstName, bio: user.profile?.bio ?? null };
+    const after = { firstName: dto.firstName ?? before.firstName, bio: dto.bio === undefined ? before.bio : dto.bio || null };
+
+    const changed: string[] = [];
+    if (after.firstName !== before.firstName) changed.push('firstName');
+    if (after.bio !== before.bio) changed.push('bio');
+    if (dto.avatar !== undefined && (dto.avatar ?? null) !== (user.profile?.avatar ?? null)) changed.push('avatar');
+    if (changed.length === 0) return { changed, before, after };
+
+    await this.prisma.$transaction(async (tx) => {
+      if (changed.includes('firstName')) await tx.user.update({ where: { id: userId }, data: { firstName: after.firstName } });
+      if (changed.includes('bio') || changed.includes('avatar')) {
+        const data = {
+          ...(changed.includes('bio') ? { bio: after.bio } : {}),
+          ...(changed.includes('avatar') ? { avatar: dto.avatar ?? null } : {}),
+        };
+        await tx.staffProfile.upsert({ where: { userId }, create: { userId, ...data }, update: data });
+      }
+    });
+    return { changed, before, after };
   }
 
   /** Self-service password change — requires the current password. */
