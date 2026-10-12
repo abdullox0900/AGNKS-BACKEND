@@ -75,6 +75,11 @@ export class DashboardAuthService {
     };
   }
 
+  async avatars(): Promise<Record<string, string>> {
+    const rows = await this.prisma.staffProfile.findMany({ where: { avatar: { not: null } }, select: { userId: true, avatar: true } });
+    return Object.fromEntries(rows.map((r) => [r.userId, r.avatar as string]));
+  }
+
   /**
    * Own profile: display name, "about me", avatar. Returns which fields changed (names only — never the avatar bytes)
    * so the caller can write a compact audit entry. `undefined` = leave as is, `null` = clear.

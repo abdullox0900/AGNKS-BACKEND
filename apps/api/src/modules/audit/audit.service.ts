@@ -142,7 +142,7 @@ const GROUPS: Record<string, string[]> = {
   staff: ['staff.'],
   stations: ['station.', 'terminal.'],
   rules: ['settings.', 'promotion.'],
-  messages: ['broadcast.', 'feedback.', 'dispute.'],
+  messages: ['broadcast.', 'feedback.', 'dispute.', 'news.'],
   security: ['data.', 'datafix.'],
 };
 

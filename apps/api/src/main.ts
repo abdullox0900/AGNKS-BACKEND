@@ -45,6 +45,8 @@ async function bootstrap() {
   // live on different origins — cross-origin embedding (e.g. <img> for receipt photos)
   // must be allowed, so the default same-origin resource policy would break that.
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+  // Release-note posts carry one picture (a data URL, ≤ ~200 KB); Nest's default 100 KB JSON limit is too small for that.
+  app.useBodyParser('json', { limit: '400kb' });
   app.use(cookieParser());
   // API responses are per-actor and change frequently (balance, shift state, etc.) —
   // never let the browser or an intermediary cache/reuse them across requests.

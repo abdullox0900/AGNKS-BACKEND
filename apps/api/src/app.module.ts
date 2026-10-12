@@ -32,6 +32,7 @@ import { DataFixModule } from '@/modules/data-fix/data-fix.module';
 import { AuditModule } from '@/modules/audit/audit.module';
 import { BotModule } from '@/modules/bot/bot.module';
 import { BroadcastsModule } from '@/modules/broadcasts/broadcasts.module';
+import { ChangelogModule } from '@/modules/changelog/changelog.module';
 import { HealthController } from '@/modules/health/health.controller';
 
 @Module({
@@ -61,6 +62,7 @@ import { HealthController } from '@/modules/health/health.controller';
     AuditModule,
     BotModule,
     BroadcastsModule,
+    ChangelogModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -11,6 +11,8 @@ import {
 } from '@agnks/types';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import { StaffAuthGuard } from '@/common/guards/staff-auth.guard';
+import { RolesGuard } from '@/common/guards/roles.guard';
+import { Roles } from '@/common/decorators/roles.decorator';
 import { CurrentStaff } from '@/common/decorators/current-actor.decorator';
 import type { StaffActor } from '@/common/types/actor';
 import { DashboardAuthService } from './dashboard-auth.service';
@@ -58,6 +60,14 @@ export class DashboardAuthController {
       });
     }
     return this.auth.me(actor.userId);
+  }
+
+  /** userId → avatar (data URL) of every dashboard user who has one — one cached lookup that tables and logs use to show faces. */
+  @Get('avatars')
+  @UseGuards(StaffAuthGuard, RolesGuard)
+  @Roles('branch_manager', 'root_admin', 'seo')
+  avatars() {
+    return this.auth.avatars();
   }
 
   /** The caller's own recent actions (never anyone else's), for the profile page. */

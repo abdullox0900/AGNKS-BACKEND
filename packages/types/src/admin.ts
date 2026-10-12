@@ -29,6 +29,33 @@ export const updateProfileSchema = z
   .refine((v) => Object.values(v).some((x) => x !== undefined), { message: 'empty_update' });
 export type UpdateProfileDto = z.infer<typeof updateProfileSchema>;
 
+const httpUrl = z
+  .string()
+  .trim()
+  .max(500)
+  .regex(/^https?:\/\/[^\s]+$/i, 'must be an http(s) link');
+
+/** "Yangilanishlar" post: what changed, optionally a version, a link and one picture. */
+export const createChangelogSchema = z.object({
+  title: z.string().trim().min(2).max(120),
+  body: z.string().trim().min(1).max(5000),
+  version: z.string().trim().max(20).nullable().optional(),
+  linkUrl: httpUrl.nullable().optional(),
+  linkLabel: z.string().trim().max(60).nullable().optional(),
+  image: z
+    .string()
+    .regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/)
+    .max(200_000)
+    .nullable()
+    .optional(),
+});
+export type CreateChangelogDto = z.infer<typeof createChangelogSchema>;
+
+export const updateChangelogSchema = createChangelogSchema
+  .partial()
+  .refine((v) => Object.values(v).some((x) => x !== undefined), { message: 'empty_update' });
+export type UpdateChangelogDto = z.infer<typeof updateChangelogSchema>;
+
 export const createStaffSchema = z.object({
   phone: z.string().regex(/^\+998\d{9}$/),
   firstName: z.string().trim().min(2).max(40),

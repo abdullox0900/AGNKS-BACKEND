@@ -151,6 +151,24 @@ model StaffProfile {
   @@map("staff_profiles")
 }
 
+/// "Yangilanishlar": release notes / what-changed posts written by the SEO and read by every dashboard user.
+model ChangelogPost {
+  id        String   @id @default(uuid())
+  title     String
+  body      String
+  version   String?
+  linkUrl   String?  @map("link_url")
+  linkLabel String?  @map("link_label")
+  /// one picture, already shrunk in the browser (JPEG/PNG/WebP data URL)
+  image     String?
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([createdAt])
+  @@map("changelog_posts")
+}
+
 model UserRole {
   id          String    @id @default(uuid())
   userId      String    @map("user_id")
