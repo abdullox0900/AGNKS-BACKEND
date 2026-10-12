@@ -132,6 +132,7 @@ model User {
   consents    Consent[]
   card        Card?
   profile     StaffProfile?
+  referral    ClientReferral?
 
   auditActions AuditLog[] @relation("audit_actor")
 
@@ -167,6 +168,38 @@ model ChangelogPost {
 
   @@index([createdAt])
   @@map("changelog_posts")
+}
+
+/// Fuel-station attendants ("zapravkachilar") — the people a new client can say brought them to the app.
+/// Not accounts: nobody logs in as an attendant. Deactivated instead of deleted once they have referrals.
+model Attendant {
+  id        String   @id @default(uuid())
+  stationId String   @map("station_id")
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  station   Station          @relation(fields: [stationId], references: [id])
+  referrals ClientReferral[]
+
+  @@unique([stationId, name])
+  @@map("attendants")
+}
+
+/// A new client's answer to "who brought you?": a listed attendant, a typed name, or a skip. One row per client.
+model ClientReferral {
+  userId      String   @id @map("user_id")
+  attendantId String?  @map("attendant_id")
+  typedName   String?  @map("typed_name")
+  skipped     Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attendant Attendant? @relation(fields: [attendantId], references: [id], onDelete: SetNull)
+
+  @@index([attendantId])
+  @@index([createdAt])
+  @@map("client_referrals")
 }
 
 model UserRole {
@@ -253,6 +286,7 @@ model Station {
   receipts    Receipt[]
   spendOps    SpendOperation[]
   promotions  Promotion[]
+  attendants  Attendant[]
 
   @@map("stations")
 }

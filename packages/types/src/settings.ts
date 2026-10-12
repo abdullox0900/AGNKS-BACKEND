@@ -6,6 +6,12 @@ export const SETTINGS_DEFAULTS = {
   'bonus.expiry_days': 180,
   /** "Bugungi metan narxi" shown in the client app, so'm per m³ — display only, not used in any calculation */
   'methane.price': 3900,
+  /** ask NEW clients "who brought you?" right after they register (Dashboard → Zapravkachilar) */
+  'referral.enabled': false,
+  /** only clients who registered after this moment are asked (set when the question is switched on); '' = none */
+  'referral.enabled_from': '',
+  /** reward for the attendant who brings the most clients, so'm — shown in the Dashboard, not paid by the system */
+  'referral.reward_amount': 1_500_000,
   'receipt.max_age_min': 15 * 24 * 60,
   'receipt.min_amount': 10_000,
   'receipt.max_amount': 3_000_000,
@@ -32,6 +38,9 @@ export const settingsSchemas = {
   'bonus.base_rate_bps': z.number().int().min(0).max(10000),
   'bonus.expiry_days': z.number().int().min(0),
   'methane.price': z.number().int().min(0).max(1_000_000),
+  'referral.enabled': z.boolean(),
+  'referral.enabled_from': z.string(),
+  'referral.reward_amount': z.number().int().min(0).max(1_000_000_000),
   'receipt.max_age_min': z.number().int().min(1),
   'receipt.min_amount': z.number().int().min(0),
   'receipt.max_amount': z.number().int().min(0),

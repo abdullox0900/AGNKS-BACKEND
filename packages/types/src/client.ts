@@ -44,6 +44,8 @@ export const meResponseSchema = z.object({
   marketingOptIn: z.boolean(),
   /** today's methane price, so'm per m³ (set in Dashboard → Bonus; display only) */
   methanePrice: z.number().int(),
+  /** show the "who brought you?" question (new client, feature on, not answered yet) */
+  referralAsk: z.boolean(),
 });
 export type MeResponse = z.infer<typeof meResponseSchema>;
 
@@ -119,3 +121,13 @@ export const feedbackCreateSchema = z.object({
   message: z.string().trim().min(2).max(1000),
 });
 export type FeedbackCreateDto = z.infer<typeof feedbackCreateSchema>;
+
+/** A new client's answer to "who brought you?": a listed attendant, a typed name, or a skip. */
+export const referralAnswerSchema = z
+  .object({
+    attendantId: z.string().uuid().optional(),
+    name: z.string().trim().min(2).max(60).optional(),
+    skip: z.literal(true).optional(),
+  })
+  .refine((v) => [v.attendantId, v.name, v.skip].filter((x) => x !== undefined).length === 1, { message: 'exactly_one' });
+export type ReferralAnswerDto = z.infer<typeof referralAnswerSchema>;

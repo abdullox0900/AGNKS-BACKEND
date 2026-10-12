@@ -229,3 +229,27 @@ export type AnalyticsQuery = z.infer<typeof analyticsQuerySchema>;
 export const settingValueSchema = z.object({
   value: z.unknown(),
 });
+
+/** Fuel-station attendants ("zapravkachilar"). */
+export const createAttendantSchema = z.object({
+  stationId: z.string().uuid(),
+  name: z.string().trim().min(2).max(60),
+});
+export type CreateAttendantDto = z.infer<typeof createAttendantSchema>;
+
+export const updateAttendantSchema = z
+  .object({
+    stationId: z.string().uuid().optional(),
+    name: z.string().trim().min(2).max(60).optional(),
+    active: z.boolean().optional(),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), { message: 'empty_update' });
+export type UpdateAttendantDto = z.infer<typeof updateAttendantSchema>;
+
+export const referralSettingsSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    rewardAmount: z.number().int().min(0).max(1_000_000_000).optional(),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), { message: 'empty_update' });
+export type ReferralSettingsDto = z.infer<typeof referralSettingsSchema>;

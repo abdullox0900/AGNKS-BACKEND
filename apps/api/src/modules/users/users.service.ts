@@ -25,13 +25,21 @@ export class UsersService {
       select: { id: true },
     });
 
-    const [minAmount, maxAmount, spendMin, spendMax, methanePrice] = await Promise.all([
+    const [minAmount, maxAmount, spendMin, spendMax, methanePrice, referralOn, referralFrom] = await Promise.all([
       this.settings.get('receipt.min_amount'),
       this.settings.get('receipt.max_amount'),
       this.settings.get('spend.min_amount'),
       this.settings.get('spend.max_amount'),
       this.settings.get('methane.price'),
+      this.settings.get('referral.enabled'),
+      this.settings.get('referral.enabled_from'),
     ]);
+
+    // "Who brought you?" — only for clients who registered after the question was switched on, and only until answered
+    let referralAsk = false;
+    if (referralOn && user.registeredAt && !(referralFrom && user.registeredAt < new Date(referralFrom))) {
+      referralAsk = !(await this.prisma.clientReferral.findUnique({ where: { userId }, select: { userId: true } }));
+    }
 
     return {
       id: user.id,
@@ -49,6 +57,7 @@ export class UsersService {
       spendMaxAmount: spendMax,
       marketingOptIn: !!marketingConsent,
       methanePrice,
+      referralAsk,
     };
   }
 
