@@ -41,6 +41,11 @@ export class UsersService {
       referralAsk = !(await this.prisma.clientReferral.findUnique({ where: { userId }, select: { userId: true } }));
     }
 
+    const [{ n: unread }] = await this.prisma.$queryRaw<{ n: bigint }[]>`
+      select count(*)::bigint as n from feedback
+      where card_id = ${user.card.id} and last_staff_message_at is not null
+        and last_staff_message_at > coalesce(client_seen_at, 'epoch'::timestamp)`;
+
     return {
       id: user.id,
       firstName: user.firstName,
@@ -58,6 +63,8 @@ export class UsersService {
       marketingOptIn: !!marketingConsent,
       methanePrice,
       referralAsk,
+      blockedReason: user.card.blocked ? user.card.blockedReason : null,
+      supportUnread: Number(unread),
     };
   }
 

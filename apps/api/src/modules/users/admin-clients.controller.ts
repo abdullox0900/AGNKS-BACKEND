@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { adjustClientSchema, renameClientSchema, type AdjustClientDto, type RenameClientDto } from '@agnks/types';
+import { adjustClientSchema, blockClientSchema, renameClientSchema, type AdjustClientDto, type BlockClientDto, type RenameClientDto } from '@agnks/types';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import { StaffAuthGuard } from '@/common/guards/staff-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -60,8 +60,8 @@ export class AdminClientsController {
 
   @Post(':id/block')
   @Roles('seo')
-  block(@Param('id') id: string, @CurrentStaff() actor: StaffActor) {
-    return this.clients.setBlocked(id, true, actor.userId);
+  block(@Param('id') id: string, @Body(new ZodValidationPipe(blockClientSchema)) dto: BlockClientDto, @CurrentStaff() actor: StaffActor) {
+    return this.clients.setBlocked(id, true, actor.userId, dto.reason);
   }
 
   @Post(':id/unblock')

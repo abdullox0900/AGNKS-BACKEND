@@ -196,6 +196,25 @@ export const resolveFeedbackSchema = z.object({
 });
 export type ResolveFeedbackDto = z.infer<typeof resolveFeedbackSchema>;
 
+/** The dashboard's reply inside a feedback thread. */
+export const replyFeedbackSchema = z.object({
+  text: z.string().trim().min(1).max(1000),
+});
+export type ReplyFeedbackDto = z.infer<typeof replyFeedbackSchema>;
+
+export const feedbackTemplateSchema = z.object({
+  title: z.string().trim().min(2).max(60),
+  textUz: z.string().trim().min(2).max(1000),
+  textRu: z.string().trim().min(2).max(1000).nullable().optional(),
+});
+export type FeedbackTemplateDto = z.infer<typeof feedbackTemplateSchema>;
+
+/** Blocking a client always carries the reason — the client sees it in the app. */
+export const blockClientSchema = z.object({
+  reason: z.string().trim().min(3).max(300),
+});
+export type BlockClientDto = z.infer<typeof blockClientSchema>;
+
 export const removeStaffSchema = z.object({
   // Only required when the target account is a dashboard role (branch_manager/root_admin/seo) —
   // a cashier can be removed without it (see StaffService.remove).

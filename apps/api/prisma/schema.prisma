@@ -92,6 +92,13 @@ enum DisputeStatus {
 enum FeedbackKind {
   suggestion
   complaint
+  /// a blocked client asking to be unblocked
+  appeal
+}
+
+enum FeedbackSender {
+  client
+  staff
 }
 
 enum FeedbackStatus {
@@ -254,6 +261,9 @@ model Card {
   cachedBalance  BigInt   @default(0) @map("cached_balance")
   pendingAmount  BigInt   @default(0) @map("pending_amount")
   blocked        Boolean  @default(false)
+  /// shown to the client in the app (set when the SEO blocks the card)
+  blockedReason  String?  @map("blocked_reason")
+  blockedAt      DateTime? @map("blocked_at")
   lastActivityAt DateTime? @map("last_activity_at")
   createdAt      DateTime @default(now()) @map("created_at")
 
@@ -502,7 +512,6 @@ model Dispute {
   resolvedAt     DateTime?      @map("resolved_at")
   resolutionNote String?        @map("resolution_note")
   createdAt      DateTime       @default(now()) @map("created_at")
-
   card Card @relation(fields: [cardId], references: [id])
   // refId is polymorphic (see refType) — deliberately not a foreign key.
 
@@ -524,12 +533,46 @@ model Feedback {
   resolvedAt     DateTime?      @map("resolved_at")
   resolutionNote String?        @map("resolution_note")
   createdAt      DateTime       @default(now()) @map("created_at")
+  /// chat bookkeeping: when each side last wrote / last looked (unread = written after the other side last looked)
+  lastClientMessageAt DateTime  @default(now()) @map("last_client_message_at")
+  lastStaffMessageAt  DateTime? @map("last_staff_message_at")
+  staffSeenAt         DateTime? @map("staff_seen_at")
+  clientSeenAt        DateTime? @map("client_seen_at")
 
-  card Card @relation(fields: [cardId], references: [id])
+  card     Card              @relation(fields: [cardId], references: [id])
+  messages FeedbackMessage[]
 
   @@index([cardId])
   @@index([status])
   @@map("feedback")
+}
+
+/// Messages after the first one in a feedback thread (the first one is `Feedback.message`).
+model FeedbackMessage {
+  id         String         @id @default(uuid())
+  feedbackId String         @map("feedback_id")
+  sender     FeedbackSender
+  /// the staff member who wrote it (null for the client)
+  authorId   String?        @map("author_id")
+  body       String
+  createdAt  DateTime       @default(now()) @map("created_at")
+
+  feedback Feedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+
+  @@index([feedbackId, createdAt])
+  @@map("feedback_messages")
+}
+
+/// Ready-made replies the dashboard offers when answering a client (sent in the client's language).
+model FeedbackTemplate {
+  id        String   @id @default(uuid())
+  title     String
+  textUz    String   @map("text_uz")
+  textRu    String?  @map("text_ru")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("feedback_templates")
 }
 
 // ---------- Audit / Outbox ----------

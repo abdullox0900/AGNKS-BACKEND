@@ -1,15 +1,18 @@
-import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, Optional } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { AppError } from '@agnks/types';
 import { PrismaService } from '@/infra/prisma/prisma.service';
 import { TelegramInitDataService } from '@/infra/telegram/init-data.service';
 import type { ClientActor } from '@/common/types/actor';
+import { ALLOW_BLOCKED_KEY } from '@/common/decorators/allow-blocked.decorator';
 
 @Injectable()
 export class ClientAuthGuard implements CanActivate {
   constructor(
     private readonly initData: TelegramInitDataService,
     private readonly prisma: PrismaService,
+    @Optional() private readonly reflector?: Reflector,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -37,7 +40,8 @@ export class ClientAuthGuard implements CanActivate {
       throw new AppError('AUTH_FORBIDDEN', { reason: 'user_blocked' });
     }
     if (user.card!.blocked) {
-      throw new AppError('CARD_BLOCKED');
+      const allowed = this.reflector?.getAllAndOverride<boolean>(ALLOW_BLOCKED_KEY, [context.getHandler(), context.getClass()]);
+      if (!allowed) throw new AppError('CARD_BLOCKED');
     }
 
     const actor: ClientActor = {

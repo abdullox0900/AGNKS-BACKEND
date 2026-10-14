@@ -3,6 +3,7 @@ import { AppError } from '@agnks/types';
 import { PrismaService } from '@/infra/prisma/prisma.service';
 import { LedgerService } from '@/modules/ledger/ledger.service';
 import { AuditService } from '@/modules/audit/audit.service';
+import { NotificationsService } from '@/modules/notifications/notifications.service';
 
 @Injectable()
 export class AdminClientsService {
@@ -10,6 +11,7 @@ export class AdminClientsService {
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async search(q?: string, cursor?: string, limit = 20) {
@@ -74,6 +76,8 @@ export class AdminClientsService {
         balance: Number(card.cachedBalance),
         pending: Number(card.pendingAmount),
         blocked: card.blocked,
+        blockedReason: card.blockedReason,
+        blockedAt: card.blockedAt,
         lastActivityAt: card.lastActivityAt,
         createdAt: card.createdAt,
       },
@@ -230,18 +234,25 @@ export class AdminClientsService {
     return { balanceAfter: Number(result.balanceAfter) };
   }
 
-  async setBlocked(id: string, blocked: boolean, actorId: string) {
+  /** Blocking carries the reason (shown to the client in the app and sent to their Telegram); unblocking clears it. */
+  async setBlocked(id: string, blocked: boolean, actorId: string, reason?: string) {
     const user = await this.prisma.user.findUnique({ where: { id }, include: { card: true } });
     if (!user || !user.card) throw new AppError('NOT_FOUND');
+    if (blocked && !reason?.trim()) throw new AppError('VALIDATION_ERROR', { message: 'reason_required' });
 
-    const card = await this.prisma.card.update({ where: { id: user.card.id }, data: { blocked } });
+    const card = await this.prisma.card.update({
+      where: { id: user.card.id },
+      data: blocked ? { blocked: true, blockedReason: reason!.trim(), blockedAt: new Date() } : { blocked: false, blockedReason: null, blockedAt: null },
+    });
 
     await this.audit.record({
       actorId,
       action: blocked ? 'client.block' : 'client.unblock',
       entityType: 'card',
       entityId: card.id,
+      ...(blocked ? { after: { reason: reason!.trim() } } : { before: { reason: user.card.blockedReason } }),
     });
+    await this.notifications.enqueue(blocked ? 'client.blocked' : 'client.unblocked', { cardId: card.id, ...(blocked ? { reason: reason!.trim() } : {}) });
 
     return card;
   }

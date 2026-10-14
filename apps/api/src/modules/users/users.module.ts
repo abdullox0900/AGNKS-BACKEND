@@ -9,9 +9,10 @@ import { RulesModule } from '@/modules/rules/rules.module';
 import { AuditModule } from '@/modules/audit/audit.module';
 import { AuthModule } from '@/modules/auth/auth.module';
 import { LedgerModule } from '@/modules/ledger/ledger.module';
+import { NotificationsModule } from '@/modules/notifications/notifications.module';
 
 @Module({
-  imports: [RulesModule, AuditModule, AuthModule, LedgerModule],
+  imports: [RulesModule, AuditModule, AuthModule, LedgerModule, NotificationsModule],
   controllers: [ClientMeController, StaffController, AdminClientsController],
   providers: [UsersService, StaffService, AdminClientsService],
   exports: [UsersService, StaffService],

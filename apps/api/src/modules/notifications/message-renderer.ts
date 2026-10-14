@@ -45,6 +45,16 @@ export function renderMessage(kind: OutboxKind, payload: Record<string, unknown>
       );
     case 'client.dispute_resolved':
       return card(ru ? '📩 Обращение рассмотрено' : "📩 Murojaatingiz ko'rib chiqildi", `${ru ? 'Итог' : 'Natija'}: ${resolutionText(payload.resolution, lang)}`);
+    case 'client.feedback_reply':
+      return card(ru ? '💬 Ответ на ваше обращение' : '💬 Murojaatingizga javob keldi', esc(String(payload.text ?? '').slice(0, 600)), ru ? 'Ответить можно в приложении: Профиль → Обращения.' : "Javob yozish uchun ilovada: Profil → Murojaatlar.");
+    case 'client.blocked':
+      return card(
+        ru ? '🚫 Ваш аккаунт заблокирован' : '🚫 Hisobingiz bloklandi',
+        payload.reason ? `${ru ? 'Причина' : 'Sabab'}: ${esc(payload.reason)}` : null,
+        ru ? 'Чтобы снять блокировку, напишите нам в приложении: Профиль → Обращения.' : "Blokdan chiqish uchun ilovada yozing: Profil → Murojaatlar.",
+      );
+    case 'client.unblocked':
+      return card(ru ? '✅ Аккаунт снова активен' : '✅ Hisobingiz qayta faollashtirildi', ru ? 'Теперь вы можете пользоваться приложением как раньше.' : 'Endi ilovadan avvalgidek foydalanishingiz mumkin.');
     case 'client.bonus_expiry_warning':
       return card(
         ru ? '⏰ Бонусы скоро сгорят' : '⏰ Bonus muddati tugayapti',

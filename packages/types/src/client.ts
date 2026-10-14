@@ -46,6 +46,10 @@ export const meResponseSchema = z.object({
   methanePrice: z.number().int(),
   /** show the "who brought you?" question (new client, feature on, not answered yet) */
   referralAsk: z.boolean(),
+  /** why the card is blocked, as written by the SEO (null when not blocked or no reason given) */
+  blockedReason: z.string().nullable(),
+  /** support threads with a reply the client has not opened yet */
+  supportUnread: z.number().int(),
 });
 export type MeResponse = z.infer<typeof meResponseSchema>;
 
@@ -121,6 +125,12 @@ export const feedbackCreateSchema = z.object({
   message: z.string().trim().min(2).max(1000),
 });
 export type FeedbackCreateDto = z.infer<typeof feedbackCreateSchema>;
+
+/** A client's follow-up message inside an existing thread. */
+export const feedbackMessageSchema = z.object({
+  message: z.string().trim().min(1).max(1000),
+});
+export type FeedbackMessageDto = z.infer<typeof feedbackMessageSchema>;
 
 /** A new client's answer to "who brought you?": a listed attendant, a typed name, or a skip. */
 export const referralAnswerSchema = z

@@ -10,6 +10,7 @@ import {
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import { CurrentClient } from '@/common/decorators/current-actor.decorator';
 import { ClientAuthGuard } from '@/common/guards/client-auth.guard';
+import { AllowBlocked } from '@/common/decorators/allow-blocked.decorator';
 import type { ClientActor } from '@/common/types/actor';
 import { UsersService } from './users.service';
 
@@ -19,6 +20,7 @@ export class ClientMeController {
   constructor(private readonly users: UsersService) {}
 
   @Get()
+  @AllowBlocked()
   getMe(@CurrentClient() actor: ClientActor) {
     return this.users.getMe(actor.userId);
   }
