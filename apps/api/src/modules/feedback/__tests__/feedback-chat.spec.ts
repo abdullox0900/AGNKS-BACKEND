@@ -16,6 +16,7 @@ function feedbackSetup(opts: { card?: any; thread?: any; open?: any } = {}) {
       findUnique: jest.fn().mockResolvedValue(opts.thread ?? null),
       findMany: jest.fn().mockResolvedValue(opts.thread ? [opts.thread] : []),
       update: jest.fn().mockResolvedValue({}),
+      delete: jest.fn().mockResolvedValue({}),
     },
     feedbackMessage: { create: jest.fn().mockResolvedValue({}) },
     feedbackTemplate: { findFirst: jest.fn().mockResolvedValue({ sortOrder: 2 }), create: jest.fn().mockResolvedValue({ id: 'tpl', title: 'Salom' }), findUnique: jest.fn(), update: jest.fn(), delete: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
@@ -139,6 +140,14 @@ describe('dashboard side', () => {
     const plain = feedbackSetup({ thread: thread() });
     await plain.service.resolve('f1', 'staff1');
     expect(plain.notifications.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('deletes a whole conversation and leaves a trace in the log', async () => {
+    const { service, prisma, audit } = feedbackSetup({ thread: thread({ messages: [{ id: 'm1', sender: 'staff', body: 'Salom', createdAt: t('2026-10-13T12:00:00Z') }] }) });
+    expect(await service.remove('f1', 'seo1')).toEqual({ id: 'f1' });
+    expect(prisma.feedback.delete).toHaveBeenCalledWith({ where: { id: 'f1' } });
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'feedback.delete', before: { client: 'Mamirjon', kind: 'complaint', status: 'open', messages: 2, first: 'Skaner ishlamayapti' } }));
+    await expect(feedbackSetup({ thread: null }).service.remove('nope', 'seo1')).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
   it('counts unread threads for the sidebar badge', async () => {

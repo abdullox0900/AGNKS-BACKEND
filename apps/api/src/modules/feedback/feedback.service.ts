@@ -183,6 +183,21 @@ export class FeedbackService {
     return updated;
   }
 
+  /** Deletes a whole conversation (it disappears for the client too). The audit entry keeps who, what and how long. */
+  async remove(id: string, actorId: string) {
+    const f = await this.prisma.feedback.findUnique({ where: { id }, include: { card: { include: { user: true } }, messages: true } });
+    if (!f) throw new AppError('NOT_FOUND');
+    await this.prisma.feedback.delete({ where: { id } });
+    await this.audit.record({
+      actorId,
+      action: 'feedback.delete',
+      entityType: 'feedback',
+      entityId: id,
+      before: { client: f.card.user.firstName, kind: f.kind, status: f.status, messages: f.messages.length + 1, first: preview(f.message) },
+    });
+    return { id };
+  }
+
   // --------------------------------------------------------------- templates
 
   listTemplates() {

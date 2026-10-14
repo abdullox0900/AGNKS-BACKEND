@@ -78,6 +78,13 @@ export class AdminFeedbackController {
     return this.feedback.adminReply(id, dto.text, actor.userId);
   }
 
+  /** Only the SEO deletes conversations. */
+  @Delete(':id')
+  @Roles('seo')
+  remove(@Param('id') id: string, @CurrentStaff() actor: StaffActor) {
+    return this.feedback.remove(id, actor.userId);
+  }
+
   @Post(':id/resolve')
   resolve(
     @Param('id') id: string,
