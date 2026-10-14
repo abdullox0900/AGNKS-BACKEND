@@ -222,6 +222,12 @@ export const removeStaffSchema = z.object({
 });
 export type RemoveStaffDto = z.infer<typeof removeStaffSchema>;
 
+export const deleteFeedbackSchema = z.object({
+  // the SEO re-types their own password to delete a conversation
+  password: z.string().min(1).max(200),
+});
+export type DeleteFeedbackDto = z.infer<typeof deleteFeedbackSchema>;
+
 export const renameClientSchema = z.object({
   firstName: z.string().trim().min(2).max(40),
 });

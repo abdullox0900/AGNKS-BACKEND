@@ -1,10 +1,12 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import {
+  deleteFeedbackSchema,
   feedbackCreateSchema,
   feedbackMessageSchema,
   feedbackTemplateSchema,
   replyFeedbackSchema,
   resolveFeedbackSchema,
+  type DeleteFeedbackDto,
   type FeedbackCreateDto,
   type FeedbackMessageDto,
   type FeedbackTemplateDto,
@@ -78,11 +80,15 @@ export class AdminFeedbackController {
     return this.feedback.adminReply(id, dto.text, actor.userId);
   }
 
-  /** Only the SEO deletes conversations. */
+  /** Only the SEO deletes conversations, and only after re-typing their own password. */
   @Delete(':id')
   @Roles('seo')
-  remove(@Param('id') id: string, @CurrentStaff() actor: StaffActor) {
-    return this.feedback.remove(id, actor.userId);
+  remove(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(deleteFeedbackSchema)) dto: DeleteFeedbackDto,
+    @CurrentStaff() actor: StaffActor,
+  ) {
+    return this.feedback.remove(id, actor.userId, dto.password);
   }
 
   @Post(':id/resolve')

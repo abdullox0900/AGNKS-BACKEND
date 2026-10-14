@@ -4,6 +4,7 @@ import { AppError, type FeedbackCreateDto, type FeedbackTemplateDto } from '@agn
 import { PrismaService } from '@/infra/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { AuditService } from '@/modules/audit/audit.service';
+import { DashboardAuthService } from '@/modules/auth/dashboard-auth.service';
 
 const EPOCH = new Date(0);
 const PREVIEW = 90;
@@ -39,6 +40,7 @@ export class FeedbackService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly audit: AuditService,
+    private readonly dashboardAuth: DashboardAuthService,
   ) {}
 
   // ----------------------------------------------------------------- client
@@ -184,7 +186,9 @@ export class FeedbackService {
   }
 
   /** Deletes a whole conversation (it disappears for the client too). The audit entry keeps who, what and how long. */
-  async remove(id: string, actorId: string) {
+  async remove(id: string, actorId: string, password: string) {
+    // step-up check: the SEO re-confirms their own password, independent of the session token
+    if (!(await this.dashboardAuth.verifyPassword(actorId, password))) throw new AppError('AUTH_INVALID_CREDENTIALS');
     const f = await this.prisma.feedback.findUnique({ where: { id }, include: { card: { include: { user: true } }, messages: true } });
     if (!f) throw new AppError('NOT_FOUND');
     await this.prisma.feedback.delete({ where: { id } });

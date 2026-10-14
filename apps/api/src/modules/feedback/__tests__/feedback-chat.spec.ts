@@ -25,7 +25,8 @@ function feedbackSetup(opts: { card?: any; thread?: any; open?: any } = {}) {
   };
   const notifications = { enqueue: jest.fn().mockResolvedValue(undefined) };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
-  return { service: new FeedbackService(prisma, notifications as never, audit as never), prisma, notifications, audit };
+  const dashboardAuth = { verifyPassword: jest.fn().mockImplementation(async (_id: string, pw: string) => pw === 'secret123') };
+  return { service: new FeedbackService(prisma, notifications as never, audit as never, dashboardAuth as never), prisma, notifications, audit, dashboardAuth };
 }
 
 const thread = (over: Record<string, unknown> = {}) => ({
@@ -144,10 +145,17 @@ describe('dashboard side', () => {
 
   it('deletes a whole conversation and leaves a trace in the log', async () => {
     const { service, prisma, audit } = feedbackSetup({ thread: thread({ messages: [{ id: 'm1', sender: 'staff', body: 'Salom', createdAt: t('2026-10-13T12:00:00Z') }] }) });
-    expect(await service.remove('f1', 'seo1')).toEqual({ id: 'f1' });
+    expect(await service.remove('f1', 'seo1', 'secret123')).toEqual({ id: 'f1' });
     expect(prisma.feedback.delete).toHaveBeenCalledWith({ where: { id: 'f1' } });
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'feedback.delete', before: { client: 'Mamirjon', kind: 'complaint', status: 'open', messages: 2, first: 'Skaner ishlamayapti' } }));
-    await expect(feedbackSetup({ thread: null }).service.remove('nope', 'seo1')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(feedbackSetup({ thread: null }).service.remove('nope', 'seo1', 'secret123')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('refuses to delete a conversation without the right password', async () => {
+    const { service, prisma, audit } = feedbackSetup({ thread: thread() });
+    await expect(service.remove('f1', 'seo1', 'wrong')).rejects.toMatchObject({ code: 'AUTH_INVALID_CREDENTIALS' });
+    expect(prisma.feedback.delete).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
   });
 
   it('counts unread threads for the sidebar badge', async () => {
