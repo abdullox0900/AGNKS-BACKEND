@@ -19,6 +19,31 @@ export class AdminClientsController {
     return this.clients.search(q, cursor, limit ? Math.min(Math.max(Number(limit) || 20, 1), 200) : 20);
   }
 
+  /** Numbered pages for the Mijozlar page: `?page=1&pageSize=40&sort=balance|seen|registered&filter=recent|frequent&q=`. */
+  @Get('page')
+  @Roles('branch_manager', 'root_admin', 'seo')
+  listPage(
+    @Query('q') q?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('sort') sort?: string,
+    @Query('filter') filter?: string,
+  ) {
+    return this.clients.page({
+      q: q || undefined,
+      page: Number(page) || 1,
+      pageSize: Number(pageSize) || 40,
+      sort: sort === 'seen' || sort === 'registered' ? sort : 'balance',
+      filter: filter === 'recent' || filter === 'frequent' ? filter : undefined,
+    });
+  }
+
+  @Get('stats')
+  @Roles('branch_manager', 'root_admin', 'seo')
+  stats() {
+    return this.clients.stats();
+  }
+
   // root_admin may browse the list but not open a client (balance, history, receipts) — view-only role.
   @Get(':id')
   @Roles('branch_manager', 'seo')

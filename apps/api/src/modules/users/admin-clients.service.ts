@@ -1,9 +1,21 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { AppError } from '@agnks/types';
 import { PrismaService } from '@/infra/prisma/prisma.service';
 import { LedgerService } from '@/modules/ledger/ledger.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
+import { tashkentDay } from '@/common/lib/client-activity';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** "recently" = opened the app in the last 7 days */
+export const RECENT_DAYS = 7;
+/** "often" = opened the app on at least this many different days of the last 30 */
+export const FREQUENT_MIN_DAYS = 5;
+const FREQUENT_WINDOW_DAYS = 30;
+
+export type ClientsFilter = 'recent' | 'frequent';
+export type ClientsSort = 'balance' | 'seen' | 'registered';
 
 @Injectable()
 export class AdminClientsService {
@@ -27,6 +39,78 @@ export class AdminClientsService {
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
     return { items: page, nextCursor: hasMore ? page[page.length - 1].id : null };
+  }
+
+  /** `YYYY-MM-DD` (Tashkent) of the first day of the "often" window. */
+  private frequentSince(now = Date.now()) {
+    return new Date(`${tashkentDay(now - (FREQUENT_WINDOW_DAYS - 1) * DAY_MS)}T00:00:00.000Z`);
+  }
+
+  private async frequentIds(now = Date.now()): Promise<string[]> {
+    const rows = await this.prisma.clientActivityDay.groupBy({
+      by: ['userId'],
+      where: { day: { gte: this.frequentSince(now) } },
+      _count: { _all: true },
+      having: { userId: { _count: { gte: FREQUENT_MIN_DAYS } } },
+    });
+    return rows.map((r) => r.userId);
+  }
+
+  /** Numbers above the clients list: everyone, who opened the app lately, who opens it often. */
+  async stats(now = Date.now()) {
+    const [total, today, recent, frequent] = await Promise.all([
+      this.prisma.user.count({ where: { card: { isNot: null } } }),
+      this.prisma.user.count({ where: { card: { isNot: null }, lastSeenAt: { gte: new Date(`${tashkentDay(now)}T00:00:00.000+05:00`) } } }),
+      this.prisma.user.count({ where: { card: { isNot: null }, lastSeenAt: { gte: new Date(now - RECENT_DAYS * DAY_MS) } } }),
+      this.frequentIds(now).then((ids) => ids.length),
+    ]);
+    return { total, today, recent, frequent, recentDays: RECENT_DAYS, frequentMinDays: FREQUENT_MIN_DAYS, frequentWindowDays: FREQUENT_WINDOW_DAYS };
+  }
+
+  /** One numbered page of the clients list (Dashboard → Mijozlar). */
+  async page(opts: { q?: string; page?: number; pageSize?: number; sort?: ClientsSort; filter?: ClientsFilter }, now = Date.now()) {
+    const pageSize = Math.min(Math.max(opts.pageSize ?? 40, 1), 100);
+    const page = Math.max(opts.page ?? 1, 1);
+    const where: Prisma.UserWhereInput = { card: { isNot: null } };
+    if (opts.q) where.OR = [{ firstName: { contains: opts.q, mode: 'insensitive' } }, { phone: { contains: opts.q } }];
+    if (opts.filter === 'recent') where.lastSeenAt = { gte: new Date(now - RECENT_DAYS * DAY_MS) };
+    if (opts.filter === 'frequent') where.id = { in: await this.frequentIds(now) };
+
+    const orderBy: Prisma.UserOrderByWithRelationInput[] =
+      opts.sort === 'seen'
+        ? [{ lastSeenAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }]
+        : opts.sort === 'registered'
+          ? [{ registeredAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }]
+          : [{ card: { cachedBalance: 'desc' } }, { createdAt: 'desc' }];
+
+    const [total, rows] = await Promise.all([
+      this.prisma.user.count({ where }),
+      this.prisma.user.findMany({ where, include: { card: true }, orderBy, skip: (page - 1) * pageSize, take: pageSize }),
+    ]);
+    const days = rows.length
+      ? await this.prisma.clientActivityDay.groupBy({
+          by: ['userId'],
+          where: { userId: { in: rows.map((r) => r.id) }, day: { gte: this.frequentSince(now) } },
+          _count: { _all: true },
+        })
+      : [];
+    const daysOf = new Map(days.map((d) => [d.userId, d._count._all]));
+    return {
+      total,
+      page,
+      pageSize,
+      pages: Math.max(Math.ceil(total / pageSize), 1),
+      items: rows.map((u) => ({
+        id: u.id,
+        name: u.firstName,
+        phone: u.phone,
+        balance: Number(u.card!.cachedBalance),
+        blocked: u.card!.blocked,
+        registeredAt: u.registeredAt ?? u.createdAt,
+        lastSeenAt: u.lastSeenAt,
+        activeDays: daysOf.get(u.id) ?? 0,
+      })),
+    };
   }
 
   /** Full client profile: identity, card, and lifetime statistics (all numbers plain JS numbers). */

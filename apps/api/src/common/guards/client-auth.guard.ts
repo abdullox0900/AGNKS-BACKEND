@@ -6,6 +6,7 @@ import { PrismaService } from '@/infra/prisma/prisma.service';
 import { TelegramInitDataService } from '@/infra/telegram/init-data.service';
 import type { ClientActor } from '@/common/types/actor';
 import { ALLOW_BLOCKED_KEY } from '@/common/decorators/allow-blocked.decorator';
+import { touchClientActivity } from '@/common/lib/client-activity';
 
 @Injectable()
 export class ClientAuthGuard implements CanActivate {
@@ -35,6 +36,8 @@ export class ClientAuthGuard implements CanActivate {
     if (user.botKey !== parsed.botKey) {
       await this.prisma.user.update({ where: { id: user.id }, data: { botKey: parsed.botKey } }).catch(() => undefined);
     }
+
+    void touchClientActivity(this.prisma, user.id);
 
     if (user.status !== 'active') {
       throw new AppError('AUTH_FORBIDDEN', { reason: 'user_blocked' });

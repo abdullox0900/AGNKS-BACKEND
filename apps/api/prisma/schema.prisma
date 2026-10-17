@@ -132,8 +132,11 @@ model User {
   registeredAt DateTime? @map("registered_at")
   /// which client bot (main / a station key) the person last opened the app from — notifications go out through it
   botKey     String?    @map("bot_key")
+  /// last time this person opened the client app (touched at most every few minutes, see `touchClientActivity`)
+  lastSeenAt DateTime?  @map("last_seen_at")
   createdAt  DateTime   @default(now()) @map("created_at")
 
+  activityDays ClientActivityDay[]
   roles       UserRole[]
   credentials StaffCredentials?
   consents    Consent[]
@@ -144,6 +147,18 @@ model User {
   auditActions AuditLog[] @relation("audit_actor")
 
   @@map("users")
+}
+
+/// One row per client per (Tashkent) day on which they opened the app — "recently / often active" in Dashboard → Mijozlar.
+model ClientActivityDay {
+  userId String   @map("user_id")
+  day    DateTime @db.Date
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, day])
+  @@index([day])
+  @@map("client_activity_days")
 }
 
 /// Dashboard profile of a staff member: a short "about me" and a small avatar (a resized JPEG/PNG/WebP data URL).
