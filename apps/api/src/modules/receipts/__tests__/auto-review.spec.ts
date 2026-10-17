@@ -102,6 +102,36 @@ describe('AutoReviewService', () => {
     );
   });
 
+  it('phone re-check: accepts a record that matches the receipt QR', async () => {
+    const { service, tx, ledger } = setup({ found: waiting() });
+    const res = await service.recheckFromPhone('c1', 'r1', record());
+    expect(ledger.post).toHaveBeenCalledWith(tx, expect.objectContaining({ delta: 2000n }));
+    expect(tx.receipt.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ taxSource: 'client', autoReviewed: true }) }));
+    expect(res.status).toBeDefined();
+  });
+
+  it('phone re-check: rejects a record of another receipt, someone else\'s receipt, a too-fresh one, and anything while off', async () => {
+    const mismatch = setup({ found: waiting() });
+    await mismatch.service.recheckFromPhone('c1', 'r1', record({ paymentNo: 5 }));
+    expect(mismatch.ledger.post).not.toHaveBeenCalled();
+
+    await expect(setup({ found: waiting({ cardId: 'other' }) }).service.recheckFromPhone('c1', 'r1', record())).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+    const fresh = setup({ found: waiting({ createdAt: new Date() }) });
+    await fresh.service.recheckFromPhone('c1', 'r1', record());
+    expect(fresh.ledger.post).not.toHaveBeenCalled();
+
+    await expect(setup({ enabled: false }).service.recheckFromPhone('c1', 'r1', record())).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('phone list is empty while the switch is off and respects the delay otherwise', async () => {
+    expect(await setup({ enabled: false }).service.listForPhone('c1')).toEqual({ items: [] });
+    const on = setup({ rows: [waiting()] });
+    const res = await on.service.listForPhone('c1');
+    expect(res.items).toEqual([{ id: 'r1', t: 'LG1', r: '77', c: '20260925170721', s: '012' }]);
+    expect(on.prisma.receipt.findMany.mock.calls[0][0].where.cardId).toBe('c1');
+  });
+
   it('saves the switch and the delay, each as its own setting', async () => {
     const { service, settings } = setup();
     await service.updateSettings({ enabled: true, delayMin: 30 }, 'seo1');

@@ -95,6 +95,12 @@ export const submitReceiptSchema = z
   .refine((v) => !!v.qrText || !!v.manual, { message: 'qrText or manual is required' });
 export type SubmitReceiptDto = z.infer<typeof submitReceiptSchema>;
 
+/** A waiting receipt re-checked later from the client's phone (soliq.uz only answers Uzbek IPs). */
+export const recheckReceiptSchema = z.object({
+  soliqData: z.record(z.string(), z.unknown()),
+});
+export type RecheckReceiptDto = z.infer<typeof recheckReceiptSchema>;
+
 export const submitReceiptResponseSchema = z.object({
   id: z.string().uuid(),
   status: z.enum(RECEIPT_STATUS),
