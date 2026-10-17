@@ -12,6 +12,10 @@ export const SETTINGS_DEFAULTS = {
   'referral.enabled_from': '',
   /** reward for the attendant who brings the most clients, so'm — shown in the Dashboard, not paid by the system */
   'referral.reward_amount': 1_500_000,
+  /** the program re-checks receipts soliq.uz could not confirm and credits the bonus itself (Dashboard → Tekshiruv) */
+  'receipt.auto_review': false,
+  /** how long a receipt waits (min) before each automatic re-check */
+  'receipt.auto_review_delay_min': 10,
   'receipt.max_age_min': 15 * 24 * 60,
   'receipt.min_amount': 10_000,
   'receipt.max_amount': 3_000_000,
@@ -41,6 +45,8 @@ export const settingsSchemas = {
   'referral.enabled': z.boolean(),
   'referral.enabled_from': z.string(),
   'referral.reward_amount': z.number().int().min(0).max(1_000_000_000),
+  'receipt.auto_review': z.boolean(),
+  'receipt.auto_review_delay_min': z.number().int().min(1).max(1440),
   'receipt.max_age_min': z.number().int().min(1),
   'receipt.min_amount': z.number().int().min(0),
   'receipt.max_amount': z.number().int().min(0),

@@ -10,6 +10,7 @@ export const QUEUE_NAMES = {
   photosCleanup: 'photos.cleanup',
   idempotencyCleanup: 'idempotency.cleanup',
   broadcastDispatch: 'broadcast.dispatch',
+  receiptAutoReview: 'receipt.auto-review',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];

@@ -1,10 +1,11 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
-import { parseReceiptSchema, submitReceiptSchema, type ParseReceiptDto, type SubmitReceiptDto } from '@agnks/types';
+import { parseReceiptSchema, recheckReceiptSchema, submitReceiptSchema, type ParseReceiptDto, type RecheckReceiptDto, type SubmitReceiptDto } from '@agnks/types';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import { ClientAuthGuard } from '@/common/guards/client-auth.guard';
 import { CurrentClient } from '@/common/decorators/current-actor.decorator';
 import type { ClientActor } from '@/common/types/actor';
 import { ReceiptsService } from './receipts.service';
+import { AutoReviewService } from './auto-review.service';
 import { HistoryService, type HistoryType } from './history.service';
 
 @Controller('me')
@@ -12,6 +13,7 @@ import { HistoryService, type HistoryType } from './history.service';
 export class ReceiptsController {
   constructor(
     private readonly receipts: ReceiptsService,
+    private readonly autoReview: AutoReviewService,
     private readonly history: HistoryService,
   ) {}
 
@@ -23,6 +25,17 @@ export class ReceiptsController {
   @Post('receipts')
   submit(@CurrentClient() actor: ClientActor, @Body(new ZodValidationPipe(submitReceiptSchema)) dto: SubmitReceiptDto) {
     return this.receipts.submit(actor.cardId, dto);
+  }
+
+  /** Waiting receipts the phone may re-check against soliq.uz now (empty while Avto-tekshiruv is off). */
+  @Get('receipts/recheck')
+  recheckList(@CurrentClient() actor: ClientActor) {
+    return this.autoReview.listForPhone(actor.cardId);
+  }
+
+  @Post('receipts/:id/recheck')
+  recheck(@CurrentClient() actor: ClientActor, @Param('id') id: string, @Body(new ZodValidationPipe(recheckReceiptSchema)) dto: RecheckReceiptDto) {
+    return this.autoReview.recheckFromPhone(actor.cardId, id, dto.soliqData);
   }
 
   @Get('receipts/:id')

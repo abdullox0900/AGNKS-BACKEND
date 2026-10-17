@@ -352,7 +352,7 @@ export class ReceiptsService {
   /** Receipts a reviewer already decided on (approved or rejected), newest decision first. */
   async listReviewed(scopeStationId: string | null, cursor?: string, limit = 30) {
     const rows = await this.prisma.receipt.findMany({
-      where: { reviewedBy: { not: null }, reviewedAt: { not: null }, ...(scopeStationId ? { stationId: scopeStationId } : {}) },
+      where: { OR: [{ reviewedBy: { not: null } }, { autoReviewed: true }], reviewedAt: { not: null }, ...(scopeStationId ? { stationId: scopeStationId } : {}) },
       include: { station: true, terminal: true, card: { include: { user: true } } },
       orderBy: [{ reviewedAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
@@ -360,7 +360,7 @@ export class ReceiptsService {
     });
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
-    const ids = [...new Set(page.map((r) => r.reviewedBy!))];
+    const ids = [...new Set(page.flatMap((r) => (r.reviewedBy ? [r.reviewedBy] : [])))];
     const reviewers = await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, firstName: true, phone: true } });
     const byId = new Map(reviewers.map((u) => [u.id, u]));
     return {
@@ -377,8 +377,10 @@ export class ReceiptsService {
         reviewNote: r.reviewNote,
         reviewedAt: r.reviewedAt!.toISOString(),
         reviewerId: r.reviewedBy,
-        reviewerName: byId.get(r.reviewedBy!)?.firstName ?? null,
-        reviewerPhone: byId.get(r.reviewedBy!)?.phone ?? null,
+        reviewerName: r.reviewedBy ? byId.get(r.reviewedBy)?.firstName ?? null : null,
+        reviewerPhone: r.reviewedBy ? byId.get(r.reviewedBy)?.phone ?? null : null,
+        /** decided by the program (Avto-tekshiruv), not by a person */
+        auto: r.autoReviewed,
         soliqLink: this.soliqLink(r),
       })),
       nextCursor: hasMore ? page[page.length - 1].id : null,

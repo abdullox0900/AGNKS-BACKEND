@@ -228,6 +228,14 @@ export const deleteFeedbackSchema = z.object({
 });
 export type DeleteFeedbackDto = z.infer<typeof deleteFeedbackSchema>;
 
+export const autoReviewSettingsSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    delayMin: z.number().int().min(1).max(1440).optional(),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), { message: 'empty_update' });
+export type AutoReviewSettingsDto = z.infer<typeof autoReviewSettingsSchema>;
+
 export const renameClientSchema = z.object({
   firstName: z.string().trim().min(2).max(40),
 });

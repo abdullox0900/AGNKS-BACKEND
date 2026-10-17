@@ -9,16 +9,18 @@ import { AnomalyScanProcessor } from './anomaly.processor';
 import { PhotosCleanupProcessor } from './photos.processor';
 import { IdempotencyCleanupProcessor } from './idempotency.processor';
 import { BroadcastDispatchProcessor } from './broadcast.processor';
+import { ReceiptAutoReviewProcessor } from './receipt-auto-review.processor';
 import { JobsSchedulerService } from './scheduler.service';
 import { ShiftsModule } from '@/modules/shifts/shifts.module';
 import { LedgerModule } from '@/modules/ledger/ledger.module';
 import { RulesModule } from '@/modules/rules/rules.module';
 import { NotificationsModule } from '@/modules/notifications/notifications.module';
 import { AnalyticsModule } from '@/modules/analytics/analytics.module';
+import { ReceiptsModule } from '@/modules/receipts/receipts.module';
 import { BroadcastsCoreModule } from '@/modules/broadcasts/broadcasts.module';
 
 @Module({
-  imports: [ShiftsModule, LedgerModule, RulesModule, NotificationsModule, AnalyticsModule, BroadcastsCoreModule],
+  imports: [ShiftsModule, LedgerModule, RulesModule, NotificationsModule, AnalyticsModule, BroadcastsCoreModule, ReceiptsModule],
   providers: [
     OutboxProcessor,
     ShiftForgottenProcessor,
@@ -30,6 +32,7 @@ import { BroadcastsCoreModule } from '@/modules/broadcasts/broadcasts.module';
     PhotosCleanupProcessor,
     IdempotencyCleanupProcessor,
     BroadcastDispatchProcessor,
+    ReceiptAutoReviewProcessor,
     JobsSchedulerService,
   ],
 })

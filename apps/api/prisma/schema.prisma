@@ -373,6 +373,12 @@ model Receipt {
   reviewedBy     String?       @map("reviewed_by")
   reviewedAt     DateTime?     @map("reviewed_at")
   reviewNote     String?       @map("review_note")
+  /// decided by the program itself (Dashboard → Tekshiruv → Avto-tekshiruv), not by a person
+  autoReviewed   Boolean       @default(false) @map("auto_reviewed")
+  /// how many times the server re-asked soliq.uz for this waiting receipt
+  autoAttempts   Int           @default(0) @map("auto_attempts")
+  /// last automatic re-check (server or the client's phone)
+  autoCheckedAt  DateTime?     @map("auto_checked_at")
   shiftId        String?       @map("shift_id")
   createdAt      DateTime      @default(now()) @map("created_at")
 

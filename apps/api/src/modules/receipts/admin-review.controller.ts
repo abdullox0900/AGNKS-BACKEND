@@ -1,5 +1,13 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
-import { isNetworkWideRole, reviewApproveSchema, reviewRejectSchema, type ReviewApproveDto, type ReviewRejectDto } from '@agnks/types';
+import { Body, Controller, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import {
+  autoReviewSettingsSchema,
+  isNetworkWideRole,
+  reviewApproveSchema,
+  reviewRejectSchema,
+  type AutoReviewSettingsDto,
+  type ReviewApproveDto,
+  type ReviewRejectDto,
+} from '@agnks/types';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import { StaffAuthGuard } from '@/common/guards/staff-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -8,12 +16,16 @@ import { Roles } from '@/common/decorators/roles.decorator';
 import { CurrentStaff } from '@/common/decorators/current-actor.decorator';
 import type { StaffActor } from '@/common/types/actor';
 import { ReceiptsService } from './receipts.service';
+import { AutoReviewService } from './auto-review.service';
 
 @Controller('admin/review')
 @UseGuards(StaffAuthGuard, RolesGuard, StationScopeGuard)
 @Roles('branch_manager', 'root_admin', 'seo')
 export class AdminReviewController {
-  constructor(private readonly receipts: ReceiptsService) {}
+  constructor(
+    private readonly receipts: ReceiptsService,
+    private readonly autoReview: AutoReviewService,
+  ) {}
 
   @Get()
   async list(@Query('cursor') cursor?: string) {
@@ -26,6 +38,18 @@ export class AdminReviewController {
   @Get('history/list')
   history(@CurrentStaff() actor: StaffActor, @Query('cursor') cursor?: string) {
     return this.receipts.listReviewed(isNetworkWideRole(actor.role) ? null : actor.stationId, cursor);
+  }
+
+  /** "Avto-tekshiruv": everyone who sees the queue sees the switch, only the SEO flips it. */
+  @Get('auto')
+  getAuto() {
+    return this.autoReview.getSettings();
+  }
+
+  @Put('auto')
+  @Roles('seo')
+  putAuto(@Body(new ZodValidationPipe(autoReviewSettingsSchema)) dto: AutoReviewSettingsDto, @CurrentStaff() actor: StaffActor) {
+    return this.autoReview.updateSettings(dto, actor.userId);
   }
 
   @Get(':receiptId')

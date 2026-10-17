@@ -2,6 +2,7 @@ import { AdminLargeReceiptsController } from './admin-large-receipts.controller'
 import { Module } from '@nestjs/common';
 import { ReceiptsService } from './receipts.service';
 import { SoliqFetchService } from './soliq-fetch.service';
+import { AutoReviewService } from './auto-review.service';
 import { HistoryService } from './history.service';
 import { ReceiptsController } from './receipts.controller';
 import { AdminReviewController } from './admin-review.controller';
@@ -15,7 +16,7 @@ import { AuditModule } from '@/modules/audit/audit.module';
 @Module({
   imports: [LedgerModule, RulesModule, NotificationsModule, AuthModule, AuditModule],
   controllers: [ReceiptsController, AdminReviewController, AdminLargeReceiptsController, AdminClientReceiptController],
-  providers: [ReceiptsService, SoliqFetchService, HistoryService],
-  exports: [ReceiptsService, HistoryService],
+  providers: [ReceiptsService, SoliqFetchService, HistoryService, AutoReviewService],
+  exports: [ReceiptsService, HistoryService, AutoReviewService],
 })
 export class ReceiptsModule {}

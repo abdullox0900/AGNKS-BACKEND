@@ -25,6 +25,7 @@ export class JobsSchedulerService implements OnModuleInit {
     @InjectQueue(QUEUE_NAMES.photosCleanup) private readonly photosCleanupQueue: Queue,
     @InjectQueue(QUEUE_NAMES.idempotencyCleanup) private readonly idempotencyCleanupQueue: Queue,
     @InjectQueue(QUEUE_NAMES.broadcastDispatch) private readonly broadcastDispatchQueue: Queue,
+    @InjectQueue(QUEUE_NAMES.receiptAutoReview) private readonly receiptAutoReviewQueue: Queue,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -39,6 +40,7 @@ export class JobsSchedulerService implements OnModuleInit {
       this.photosCleanupQueue.add('cleanup', {}, { repeat: { pattern: '30 3 * * *', tz: TZ }, jobId: 'photos-cleanup' }),
       this.idempotencyCleanupQueue.add('cleanup', {}, { repeat: { pattern: '45 3 * * *', tz: TZ }, jobId: 'idempotency-cleanup' }),
       this.broadcastDispatchQueue.add('dispatch', {}, { repeat: { every: 30_000 }, jobId: 'broadcast-dispatch' }),
+      this.receiptAutoReviewQueue.add('review', {}, { repeat: { every: 60_000 }, jobId: 'receipt-auto-review' }),
     ]);
     this.logger.log('Recurring job schedules registered');
   }
