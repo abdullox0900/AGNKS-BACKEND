@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { AppError } from '@agnks/types';
 import { PrismaService } from '@/infra/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
-import { clientStationIds } from '@/common/lib/client-stations';
+import { stationVisibility } from '@/common/lib/client-stations';
 
 const OUTBOX_KIND = 'client.broadcast';
 const OUTBOX_CHUNK = 1000;
@@ -144,9 +144,8 @@ export class BroadcastsService {
       orderBy: { sentAt: 'desc' },
       take: limit,
     });
-    const targeted = all.some((r) => r.stationIds.length > 0);
-    const mine = targeted ? await clientStationIds(this.prisma, cardId) : new Set<string>();
-    const rows = all.filter((r) => r.stationIds.length === 0 || r.stationIds.some((id) => mine.has(id)));
+    const canSee = await stationVisibility(this.prisma, cardId, [...new Set(all.flatMap((r) => r.stationIds))]);
+    const rows = all.filter((r) => canSee(r.stationIds));
     return rows.map((r) => ({
       id: r.id,
       textUz: r.textUz,

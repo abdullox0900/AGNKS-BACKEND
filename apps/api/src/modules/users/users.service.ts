@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AppError, type MeResponse, type RegisterDto, type UpdateMeDto } from '@agnks/types';
-import { clientStationIds } from '@/common/lib/client-stations';
+import { stationVisibility } from '@/common/lib/client-stations';
 import { PrismaService } from '@/infra/prisma/prisma.service';
 import { SettingsService } from '@/modules/rules/settings.service';
 import { RateResolverService } from '@/modules/rules/rate-resolver.service';
@@ -149,8 +149,8 @@ export class UsersService {
       take: 50,
     });
     // an offer limited to some stations is only shown to the clients of those stations
-    const mine = rows.some((p) => p.stationIds.length > 0) ? await clientStationIds(this.prisma, cardId) : new Set<string>();
-    const visible = rows.filter((p) => p.stationIds.length === 0 || p.stationIds.some((id) => mine.has(id)));
+    const canSee = await stationVisibility(this.prisma, cardId, [...new Set(rows.flatMap((p) => p.stationIds))]);
+    const visible = rows.filter((p) => canSee(p.stationIds));
     const stationIds = [...new Set(visible.flatMap((p) => p.stationIds))];
     const stations = stationIds.length
       ? await this.prisma.station.findMany({ where: { id: { in: stationIds } }, select: { id: true, name: true } })

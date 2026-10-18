@@ -4,13 +4,13 @@ const promo = (id: string, stationIds: string[]) => ({
   id, name: id, rateBps: 200, stationIds, startsAt: new Date(Date.now() - 1000), endsAt: new Date(Date.now() + 86_400_000), cancelledAt: null,
 });
 
-function setup(o: { promos: ReturnType<typeof promo>[]; botKey?: string | null; botStations?: string[]; receiptStations?: string[] }) {
+function setup(o: { promos: ReturnType<typeof promo>[]; botKey?: string | null; botStations?: string[]; receiptStations?: string[]; unlinked?: string[] }) {
   const prisma = {
     promotion: { findMany: jest.fn().mockResolvedValue(o.promos) },
     card: { findUnique: jest.fn().mockResolvedValue({ user: { botKey: o.botKey ?? null } }) },
     station: {
       findMany: jest.fn().mockImplementation(async (a: { where: { botKey?: string; id?: { in: string[] } } }) =>
-        a.where.botKey ? (o.botStations ?? []).map((id) => ({ id })) : (a.where.id?.in ?? []).map((id) => ({ id, name: `Station ${id}` })),
+        a.where.botKey ? (o.botStations ?? []).map((id) => ({ id })) : (a.where.id?.in ?? []).map((id) => ({ id, name: `Station ${id}`, botKey: (o.unlinked ?? []).includes(id) ? null : `bot-${id}` })),
       ),
     },
     receipt: { findMany: jest.fn().mockResolvedValue((o.receiptStations ?? []).map((stationId) => ({ stationId }))) },
@@ -28,6 +28,11 @@ describe('promotions a client sees', () => {
   it('an offer for one station is hidden from clients of other stations', async () => {
     const res = await setup({ promos: [promo('only-s1', ['s1'])], botKey: 'quva', botStations: ['s2'], receiptStations: ['s3'] }).promotions('c1');
     expect(res).toEqual([]);
+  });
+
+  it('an offer never vanishes just because its station has no bot linked yet', async () => {
+    const res = await setup({ promos: [promo('p', ['s1'])], unlinked: ['s1'] }).promotions('c1');
+    expect(res.map((p) => p.id)).toEqual(['p']);
   });
 
   it('shown to clients on that station\'s own bot, or who used that station', async () => {
