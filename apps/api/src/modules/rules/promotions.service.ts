@@ -18,7 +18,30 @@ export class PromotionsService {
     const rows = await this.prisma.promotion.findMany({
       orderBy: { createdAt: 'desc' },
     });
-    return rows.map(toPromotionDto).filter((p) => !status || p.status === status);
+    const dtos = await this.withDetails(rows);
+    return dtos.filter((p) => !status || p.status === status);
+  }
+
+  /** Who made / stopped it and what was announced to clients — what the detail window shows. */
+  private async withDetails(rows: Parameters<typeof toPromotionDto>[0][]) {
+    if (rows.length === 0) return [];
+    const ids = [...new Set(rows.flatMap((r) => [r.createdBy, r.cancelledBy].filter((x): x is string => !!x)))];
+    const [people, broadcasts] = await Promise.all([
+      this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, firstName: true } }),
+      this.prisma.broadcast.findMany({ where: { promotionId: { in: rows.map((r) => r.id) } }, orderBy: { createdAt: 'desc' } }),
+    ]);
+    const nameOf = new Map(people.map((u) => [u.id, u.firstName]));
+    const announced = new Map<string, (typeof broadcasts)[number]>();
+    for (const b of broadcasts) if (b.promotionId && !announced.has(b.promotionId)) announced.set(b.promotionId, b);
+    return rows.map((r) => {
+      const b = announced.get(r.id);
+      return {
+        ...toPromotionDto(r),
+        createdByName: nameOf.get(r.createdBy) ?? null,
+        cancelledByName: r.cancelledBy ? nameOf.get(r.cancelledBy) ?? null : null,
+        notification: b ? { status: b.status, sendAt: b.sendAt.toISOString(), recipientCount: b.recipientCount, sentAt: b.sentAt?.toISOString() ?? null } : null,
+      };
+    });
   }
 
   async create(input: {
@@ -61,7 +84,7 @@ export class PromotionsService {
       await this.broadcasts.createForPromotion(promo, input.notifyAt, input.createdBy);
     }
 
-    return toPromotionDto(promo);
+    return (await this.withDetails([promo]))[0];
   }
 
   async cancel(id: string, actorId: string) {
