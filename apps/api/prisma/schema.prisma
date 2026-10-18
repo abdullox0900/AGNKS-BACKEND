@@ -654,6 +654,8 @@ model Broadcast {
   sendAt         DateTime        @map("send_at")
   status         BroadcastStatus @default(scheduled)
   promotionId    String?         @map("promotion_id")
+  /// only clients of these stations get it (a promotion limited to some stations); empty = everyone
+  stationIds     String[]        @default([]) @map("station_ids")
   recipientCount Int             @default(0) @map("recipient_count")
   createdBy      String          @map("created_by")
   createdAt      DateTime        @default(now()) @map("created_at")

@@ -89,6 +89,13 @@ export class RulesController {
     return this.promotions.list(status);
   }
 
+  @Get('promotions/audience')
+  @Roles('branch_manager', 'root_admin', 'seo')
+  async audience(@Query('stationIds') stationIds?: string | string[]) {
+    const ids = (Array.isArray(stationIds) ? stationIds : (stationIds ?? '').split(',')).filter(Boolean);
+    return { count: await this.promotions.audienceCount(ids) };
+  }
+
   @Post('promotions')
   @Roles('root_admin', 'seo')
   createPromotion(

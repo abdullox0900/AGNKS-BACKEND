@@ -32,7 +32,7 @@ export class BroadcastsService {
     return rows.map((r) => ({ ...toDto(r), delivered: stats.get(r.id)?.sent ?? 0, failed: stats.get(r.id)?.failed ?? 0 }));
   }
 
-  async create(input: { textUz: string; textRu?: string | null; sendAt?: Date | null; promotionId?: string | null; createdBy: string }) {
+  async create(input: { textUz: string; textRu?: string | null; sendAt?: Date | null; promotionId?: string | null; stationIds?: string[]; createdBy: string }) {
     const now = new Date();
     const sendAt = input.sendAt && input.sendAt > now ? input.sendAt : now;
     const row = await this.prisma.broadcast.create({
@@ -41,6 +41,7 @@ export class BroadcastsService {
         textRu: input.textRu || null,
         sendAt,
         promotionId: input.promotionId ?? null,
+        stationIds: input.stationIds ?? [],
         createdBy: input.createdBy,
       },
     });
@@ -120,6 +121,7 @@ export class BroadcastsService {
       textRu: `🔥 Новая акция: ${promo.name}\n\n${percent}% бонусов с каждого чека\n📅 ${period}\n📍 ${names || 'На всех АЗС'}`,
       sendAt: notifyAt,
       promotionId: promo.id,
+      stationIds: promo.stationIds,
       createdBy,
     });
   }
@@ -134,12 +136,16 @@ export class BroadcastsService {
 
   // ---------- webapp feed ----------
 
-  async news(limit = 50) {
-    const rows = await this.prisma.broadcast.findMany({
+  /** The feed one client sees: everything sent, except offers meant for the clients of other stations. */
+  async news(cardId: string, limit = 50) {
+    const all = await this.prisma.broadcast.findMany({
       where: { status: 'sent' },
       orderBy: { sentAt: 'desc' },
       take: limit,
     });
+    const targeted = all.some((r) => r.stationIds.length > 0);
+    const mine = targeted ? await this.stationsOfCard(cardId) : new Set<string>();
+    const rows = all.filter((r) => r.stationIds.length === 0 || r.stationIds.some((id) => mine.has(id)));
     return rows.map((r) => ({
       id: r.id,
       textUz: r.textUz,
@@ -182,15 +188,8 @@ export class BroadcastsService {
       }
     }
 
-    // Telegram push only to clients who switched promo messages on; the webapp
-    // feed (news) shows the broadcast to everyone.
     const recipients = await this.prisma.user.findMany({
-      where: {
-        tgUserId: { not: null },
-        status: 'active',
-        registeredAt: { not: null },
-        consents: { some: { type: 'marketing', revokedAt: null } },
-      },
+      where: this.audienceWhere(b.stationIds, !!b.promotionId),
       select: { tgUserId: true, lang: true },
     });
 
@@ -213,6 +212,38 @@ export class BroadcastsService {
       });
     });
     this.logger.log(`broadcast ${b.id} queued for ${rows.length} recipients`);
+  }
+
+  /**
+   * Who gets the Telegram push. A manual announcement goes only to clients who switched promo messages on.
+   * A promotion's announcement (`promo`) goes to everyone who has not switched them OFF — many clients never opened
+   * that setting — and, when the promotion is limited to some stations, only to clients of those stations
+   * (they have scanned a receipt or redeemed bonus there).
+   */
+  private audienceWhere(stationIds: string[], promo: boolean): Prisma.UserWhereInput {
+    const and: Prisma.UserWhereInput[] = [];
+    and.push(
+      promo
+        ? { OR: [{ consents: { some: { type: 'marketing', revokedAt: null } } }, { consents: { none: { type: 'marketing' } } }] }
+        : { consents: { some: { type: 'marketing', revokedAt: null } } },
+    );
+    if (stationIds.length > 0) {
+      and.push({ card: { OR: [{ receipts: { some: { stationId: { in: stationIds }, status: { not: 'rejected' } } } }, { spendOperations: { some: { stationId: { in: stationIds } } } }] } });
+    }
+    return { tgUserId: { not: null }, status: 'active', registeredAt: { not: null }, AND: and };
+  }
+
+  /** How many clients an announcement of a promotion limited to these stations would reach (empty = whole network). */
+  async promoAudienceCount(stationIds: string[]): Promise<number> {
+    return this.prisma.user.count({ where: this.audienceWhere(stationIds, true) });
+  }
+
+  private async stationsOfCard(cardId: string): Promise<Set<string>> {
+    const [receipts, spends] = await Promise.all([
+      this.prisma.receipt.findMany({ where: { cardId, status: { not: 'rejected' } }, select: { stationId: true }, distinct: ['stationId'] }),
+      this.prisma.spendOperation.findMany({ where: { cardId }, select: { stationId: true }, distinct: ['stationId'] }),
+    ]);
+    return new Set([...receipts, ...spends].map((r) => r.stationId));
   }
 
   private async deliveryStats(ids: string[]): Promise<Map<string, { sent: number; failed: number }>> {

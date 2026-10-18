@@ -22,6 +22,11 @@ export class PromotionsService {
     return dtos.filter((p) => !status || p.status === status);
   }
 
+  /** Preview for the create form: how many clients the announcement would reach. */
+  audienceCount(stationIds: string[]) {
+    return this.broadcasts.promoAudienceCount(stationIds);
+  }
+
   /** Who made / stopped it and what was announced to clients — what the detail window shows. */
   private async withDetails(rows: Parameters<typeof toPromotionDto>[0][]) {
     if (rows.length === 0) return [];

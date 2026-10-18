@@ -2,11 +2,11 @@ import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/c
 import { createBroadcastSchema, type CreateBroadcastDto } from '@agnks/types';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import { Roles } from '@/common/decorators/roles.decorator';
-import { CurrentStaff } from '@/common/decorators/current-actor.decorator';
+import { CurrentClient, CurrentStaff } from '@/common/decorators/current-actor.decorator';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { StaffAuthGuard } from '@/common/guards/staff-auth.guard';
 import { ClientAuthGuard } from '@/common/guards/client-auth.guard';
-import type { StaffActor } from '@/common/types/actor';
+import type { ClientActor, StaffActor } from '@/common/types/actor';
 import { BroadcastsService } from './broadcasts.service';
 
 @Controller('admin/broadcasts')
@@ -48,7 +48,7 @@ export class ClientNewsController {
   constructor(private readonly broadcasts: BroadcastsService) {}
 
   @Get('news')
-  news() {
-    return this.broadcasts.news();
+  news(@CurrentClient() actor: ClientActor) {
+    return this.broadcasts.news(actor.cardId);
   }
 }
