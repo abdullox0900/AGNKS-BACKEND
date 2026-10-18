@@ -1,6 +1,6 @@
 import { BroadcastsService } from '../broadcasts.service';
 
-function setup(over: { users?: { tgUserId: bigint; lang: string }[]; broadcasts?: unknown[]; receiptStations?: string[] } = {}) {
+function setup(over: { users?: { tgUserId: bigint; lang: string }[]; broadcasts?: unknown[]; receiptStations?: string[]; stationBotKeys?: string[]; botStations?: string[]; clientBot?: string | null } = {}) {
   const tx = { outbox: { createMany: jest.fn() }, broadcast: { update: jest.fn() } };
   const prisma = {
     user: { findMany: jest.fn().mockResolvedValue(over.users ?? []), count: jest.fn().mockResolvedValue(7) },
@@ -11,7 +11,8 @@ function setup(over: { users?: { tgUserId: bigint; lang: string }[]; broadcasts?
       create: jest.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'b1', createdAt: new Date(), sentAt: null, cancelledAt: null, recipientCount: 0, status: 'scheduled', ...data })),
     },
     promotion: { findUnique: jest.fn().mockResolvedValue({ id: 'p1', cancelledAt: null }) },
-    station: { findMany: jest.fn().mockResolvedValue([{ name: 'Namuna' }]) },
+    station: { findMany: jest.fn().mockImplementation(async (a: { where?: { botKey?: unknown; id?: unknown } }) => (a?.where?.id ? (over.stationBotKeys ?? []).map((botKey) => ({ botKey })) : a?.where?.botKey ? (over.botStations ?? []).map((id) => ({ id })) : [{ name: 'Namuna' }])) },
+    card: { findUnique: jest.fn().mockResolvedValue({ user: { botKey: over.clientBot ?? null } }) },
     receipt: { findMany: jest.fn().mockResolvedValue((over.receiptStations ?? []).map((stationId) => ({ stationId }))) },
     spendOperation: { findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn().mockImplementation(async (fn: (t: unknown) => unknown) => fn(tx)),
@@ -45,6 +46,15 @@ describe('who a broadcast reaches', () => {
     expect(JSON.stringify(where.AND[1])).toContain('"status":{"not":"rejected"}');
   });
 
+  it('clients of the station\'s own Telegram bot are included too', async () => {
+    const { service, prisma } = setup({ stationBotKeys: ['kokand'] });
+    prisma.broadcast.findMany.mockResolvedValueOnce([row({ promotionId: 'p1', stationIds: ['s1'] })]);
+    await service.dispatchDue();
+    const where = prisma.user.findMany.mock.calls[0][0].where;
+    expect(where.AND[1].OR).toHaveLength(2);
+    expect(where.AND[1].OR[1]).toEqual({ botKey: { in: ['kokand'] } });
+  });
+
   it('a promotion for the whole network is not limited to stations', async () => {
     const { service, prisma } = setup();
     prisma.broadcast.findMany.mockResolvedValueOnce([row({ promotionId: 'p1', stationIds: [] })]);
@@ -71,5 +81,11 @@ describe('webapp news feed', () => {
     const { service } = setup({ broadcasts: [mk('all', []), mk('mine', ['s1']), mk('other', ['s9'])], receiptStations: ['s1'] });
     const feed = await service.news('card1');
     expect(feed.map((f) => f.id)).toEqual(['all', 'mine']);
+  });
+
+  it('a client on the station\'s own bot sees its offer even before any receipt', async () => {
+    const mk = (id: string, stationIds: string[]) => row({ id, stationIds, status: 'sent', sentAt: new Date('2026-10-18') });
+    const { service } = setup({ broadcasts: [mk('mine', ['s1']), mk('other', ['s9'])], clientBot: 'kokand', botStations: ['s1'] });
+    expect((await service.news('card1')).map((f) => f.id)).toEqual(['mine']);
   });
 });

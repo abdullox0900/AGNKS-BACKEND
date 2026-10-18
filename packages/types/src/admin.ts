@@ -89,6 +89,8 @@ export const createStationSchema = z.object({
   lat: latSchema.default(0),
   lng: lngSchema.default(0),
   radiusM: z.coerce.number().int().min(10).max(5000).default(300),
+  /** this station's own Telegram bot (key of the bot registry); null = none */
+  botKey: z.string().regex(/^[a-z0-9_]{1,32}$/).nullable().optional(),
 });
 export type CreateStationDto = z.infer<typeof createStationSchema>;
 

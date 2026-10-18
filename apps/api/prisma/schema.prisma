@@ -303,6 +303,8 @@ model Station {
   lng       Decimal       @db.Decimal(9, 6)
   radiusM   Int           @default(300) @map("radius_m")
   status    StationStatus @default(active)
+  /// key of this station's own Telegram bot (`main` or a key from TELEGRAM_EXTRA_BOT_TOKENS) — its clients count as this station's clients
+  botKey    String?       @map("bot_key")
   createdAt DateTime      @default(now()) @map("created_at")
 
   terminals   Terminal[]

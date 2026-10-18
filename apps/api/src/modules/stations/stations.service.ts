@@ -19,13 +19,13 @@ export class StationsService {
     return this.prisma.station.findMany({ orderBy: { name: 'asc' } });
   }
 
-  async create(input: { name: string; address: string; lat: number; lng: number; radiusM: number }, actorId: string) {
+  async create(input: { name: string; address: string; lat: number; lng: number; radiusM: number; botKey?: string | null }, actorId: string) {
     const station = await this.prisma.station.create({ data: input });
     await this.audit.record({ actorId, action: 'station.create', entityType: 'station', entityId: station.id, after: station });
     return station;
   }
 
-  async update(id: string, input: Partial<{ name: string; address: string; lat: number; lng: number; radiusM: number; status: 'active' | 'paused' | 'closed' }>, actorId: string) {
+  async update(id: string, input: Partial<{ name: string; address: string; lat: number; lng: number; radiusM: number; status: 'active' | 'paused' | 'closed'; botKey: string | null }>, actorId: string) {
     const before = await this.prisma.station.findUnique({ where: { id } });
     if (!before) throw new AppError('NOT_FOUND');
 

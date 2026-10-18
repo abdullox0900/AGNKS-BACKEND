@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AppError, type MeResponse, type RegisterDto, type UpdateMeDto } from '@agnks/types';
+import { clientStationIds } from '@/common/lib/client-stations';
 import { PrismaService } from '@/infra/prisma/prisma.service';
 import { SettingsService } from '@/modules/rules/settings.service';
 import { RateResolverService } from '@/modules/rules/rate-resolver.service';
@@ -140,19 +141,22 @@ export class UsersService {
   }
 
   /** Client-facing list of running + upcoming promotions (cancelled/ended are hidden). */
-  async promotions() {
+  async promotions(cardId: string) {
     const now = new Date();
     const rows = await this.prisma.promotion.findMany({
       where: { cancelledAt: null, endsAt: { gte: now } },
       orderBy: { startsAt: 'asc' },
       take: 50,
     });
-    const stationIds = [...new Set(rows.flatMap((p) => p.stationIds))];
+    // an offer limited to some stations is only shown to the clients of those stations
+    const mine = rows.some((p) => p.stationIds.length > 0) ? await clientStationIds(this.prisma, cardId) : new Set<string>();
+    const visible = rows.filter((p) => p.stationIds.length === 0 || p.stationIds.some((id) => mine.has(id)));
+    const stationIds = [...new Set(visible.flatMap((p) => p.stationIds))];
     const stations = stationIds.length
       ? await this.prisma.station.findMany({ where: { id: { in: stationIds } }, select: { id: true, name: true } })
       : [];
     const nameById = new Map(stations.map((s) => [s.id, s.name]));
-    return rows.map((p) => ({
+    return visible.map((p) => ({
       id: p.id,
       name: p.name,
       percent: p.rateBps / 100,

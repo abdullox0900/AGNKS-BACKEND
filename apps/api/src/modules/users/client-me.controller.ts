@@ -46,8 +46,8 @@ export class ClientMeController {
   }
 
   @Get('promotions')
-  promotions() {
-    return this.users.promotions();
+  promotions(@CurrentClient() actor: ClientActor) {
+    return this.users.promotions(actor.cardId);
   }
 
   @Patch('marketing')

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Inject, Optional, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import {
   createStationSchema,
   createTerminalSchema,
@@ -16,10 +16,15 @@ import { RolesGuard } from '@/common/guards/roles.guard';
 import { StaffAuthGuard } from '@/common/guards/staff-auth.guard';
 import type { StaffActor } from '@/common/types/actor';
 import { StationsService } from './stations.service';
+import { CLIENT_BOTS } from '@/infra/telegram/telegram.constants';
+import type { ClientBotRegistry } from '@/infra/telegram/client-bots';
 
 @Controller()
 export class StationsController {
-  constructor(private readonly stations: StationsService) {}
+  constructor(
+    private readonly stations: StationsService,
+    @Optional() @Inject(CLIENT_BOTS) private readonly bots?: ClientBotRegistry,
+  ) {}
 
   @Get('stations')
   listPublic() {
@@ -31,6 +36,14 @@ export class StationsController {
   @Roles('branch_manager', 'root_admin', 'seo')
   listAdmin() {
     return this.stations.listAll();
+  }
+
+  /** Keys of the client bots this server runs — what a station's "Telegram bot" can be set to. */
+  @Get('admin/stations/bot-keys')
+  @UseGuards(StaffAuthGuard, RolesGuard)
+  @Roles('branch_manager', 'root_admin', 'seo')
+  botKeys() {
+    return { keys: (this.bots?.all() ?? []).map((b) => b.key) };
   }
 
   @Post('admin/stations')

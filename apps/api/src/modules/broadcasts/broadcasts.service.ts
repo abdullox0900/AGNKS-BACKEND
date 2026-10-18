@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { AppError } from '@agnks/types';
 import { PrismaService } from '@/infra/prisma/prisma.service';
 import { AuditService } from '@/modules/audit/audit.service';
+import { clientStationIds } from '@/common/lib/client-stations';
 
 const OUTBOX_KIND = 'client.broadcast';
 const OUTBOX_CHUNK = 1000;
@@ -144,7 +145,7 @@ export class BroadcastsService {
       take: limit,
     });
     const targeted = all.some((r) => r.stationIds.length > 0);
-    const mine = targeted ? await this.stationsOfCard(cardId) : new Set<string>();
+    const mine = targeted ? await clientStationIds(this.prisma, cardId) : new Set<string>();
     const rows = all.filter((r) => r.stationIds.length === 0 || r.stationIds.some((id) => mine.has(id)));
     return rows.map((r) => ({
       id: r.id,
@@ -189,7 +190,7 @@ export class BroadcastsService {
     }
 
     const recipients = await this.prisma.user.findMany({
-      where: this.audienceWhere(b.stationIds, !!b.promotionId),
+      where: await this.audienceWhere(b.stationIds, !!b.promotionId),
       select: { tgUserId: true, lang: true },
     });
 
@@ -218,9 +219,9 @@ export class BroadcastsService {
    * Who gets the Telegram push. A manual announcement goes only to clients who switched promo messages on.
    * A promotion's announcement (`promo`) goes to everyone who has not switched them OFF — many clients never opened
    * that setting — and, when the promotion is limited to some stations, only to clients of those stations
-   * (they have scanned a receipt or redeemed bonus there).
+   * (they use its own Telegram bot, or scanned a receipt / redeemed bonus there).
    */
-  private audienceWhere(stationIds: string[], promo: boolean): Prisma.UserWhereInput {
+  private async audienceWhere(stationIds: string[], promo: boolean): Promise<Prisma.UserWhereInput> {
     const and: Prisma.UserWhereInput[] = [];
     and.push(
       promo
@@ -228,22 +229,20 @@ export class BroadcastsService {
         : { consents: { some: { type: 'marketing', revokedAt: null } } },
     );
     if (stationIds.length > 0) {
-      and.push({ card: { OR: [{ receipts: { some: { stationId: { in: stationIds }, status: { not: 'rejected' } } } }, { spendOperations: { some: { stationId: { in: stationIds } } } }] } });
+      // clients of the station: those on its own Telegram bot, and those who scanned a receipt / redeemed bonus there
+      const botKeys = (await this.prisma.station.findMany({ where: { id: { in: stationIds }, botKey: { not: null } }, select: { botKey: true } })).map((s) => s.botKey!);
+      const ofStation: Prisma.UserWhereInput[] = [
+        { card: { OR: [{ receipts: { some: { stationId: { in: stationIds }, status: { not: 'rejected' } } } }, { spendOperations: { some: { stationId: { in: stationIds } } } }] } },
+      ];
+      if (botKeys.length > 0) ofStation.push({ botKey: { in: botKeys } });
+      and.push({ OR: ofStation });
     }
     return { tgUserId: { not: null }, status: 'active', registeredAt: { not: null }, AND: and };
   }
 
   /** How many clients an announcement of a promotion limited to these stations would reach (empty = whole network). */
   async promoAudienceCount(stationIds: string[]): Promise<number> {
-    return this.prisma.user.count({ where: this.audienceWhere(stationIds, true) });
-  }
-
-  private async stationsOfCard(cardId: string): Promise<Set<string>> {
-    const [receipts, spends] = await Promise.all([
-      this.prisma.receipt.findMany({ where: { cardId, status: { not: 'rejected' } }, select: { stationId: true }, distinct: ['stationId'] }),
-      this.prisma.spendOperation.findMany({ where: { cardId }, select: { stationId: true }, distinct: ['stationId'] }),
-    ]);
-    return new Set([...receipts, ...spends].map((r) => r.stationId));
+    return this.prisma.user.count({ where: await this.audienceWhere(stationIds, true) });
   }
 
   private async deliveryStats(ids: string[]): Promise<Map<string, { sent: number; failed: number }>> {
