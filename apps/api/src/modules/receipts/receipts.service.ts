@@ -8,6 +8,7 @@ import { RateResolverService } from '@/modules/rules/rate-resolver.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { AuditService } from '@/modules/audit/audit.service';
 import { distanceMeters } from '@/common/lib/geo';
+import { tashkentDay } from '@/common/lib/client-activity';
 import { calcBonus } from '@/common/lib/money';
 import { SoliqFetchService, evaluateSoliqData } from './soliq-fetch.service';
 import { buildSoliqUrl, parseManualReceiptFields, parseReceiptQr, parseReceiptTimestamp, type ParsedReceiptQr } from './qr-parser';
@@ -54,6 +55,8 @@ export class ReceiptsService {
   ): Promise<SubmitReceiptResponse> {
     const card = await this.prisma.card.findUnique({ where: { id: cardId } });
     if (card?.blocked) throw new AppError('CARD_BLOCKED');
+    // refuse early, before the QR check and the soliq.uz lookup; the same rule is enforced again under a lock below
+    await this.assertDailyLimit(this.prisma, cardId);
 
     const parsed = dto.qrText ? parseReceiptQr(dto.qrText) : parseManualReceiptFields(dto.manual!);
     const check = await this.preCheck(parsed);
@@ -94,6 +97,9 @@ export class ReceiptsService {
     const reviewReasons = verified ? [] : [tax.reason ?? 'tax_unverified'];
 
     const result = await this.prisma.$transaction(async (tx) => {
+      // two scans at the same moment must not both slip under the limit: serialise per card, then count
+      await tx.$queryRaw`SELECT id FROM cards WHERE id = ${cardId} FOR UPDATE`;
+      await this.assertDailyLimit(tx, cardId);
       const receipt = await tx.receipt.create({
         data: {
           cardId,
@@ -150,6 +156,15 @@ export class ReceiptsService {
       rateBps,
       balanceAfter: result.balanceAfter !== undefined ? Number(result.balanceAfter) : undefined,
     };
+  }
+
+  /** One client may scan at most `receipt.daily_limit` receipts per Tashkent day (every receipt they sent counts). */
+  private async assertDailyLimit(db: Pick<PrismaService, 'receipt'>, cardId: string, now = Date.now()) {
+    const limit = await this.settings.get('receipt.daily_limit');
+    if (limit <= 0) return;
+    const dayStart = new Date(`${tashkentDay(now)}T00:00:00.000+05:00`);
+    const used = await db.receipt.count({ where: { cardId, createdAt: { gte: dayStart } } });
+    if (used >= limit) throw new AppError('RECEIPT_DAILY_LIMIT', { limit });
   }
 
   async getById(cardId: string, id: string) {

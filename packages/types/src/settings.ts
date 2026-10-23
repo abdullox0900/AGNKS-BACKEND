@@ -16,6 +16,8 @@ export const SETTINGS_DEFAULTS = {
   'receipt.auto_review': false,
   /** how long a receipt waits (min) before each automatic re-check */
   'receipt.auto_review_delay_min': 10,
+  /** how many receipts one client may scan per (Tashkent) day; 0 = no limit */
+  'receipt.daily_limit': 3,
   'receipt.max_age_min': 15 * 24 * 60,
   'receipt.min_amount': 10_000,
   'receipt.max_amount': 3_000_000,
@@ -47,6 +49,7 @@ export const settingsSchemas = {
   'referral.reward_amount': z.number().int().min(0).max(1_000_000_000),
   'receipt.auto_review': z.boolean(),
   'receipt.auto_review_delay_min': z.number().int().min(1).max(1440),
+  'receipt.daily_limit': z.number().int().min(0).max(1000),
   'receipt.max_age_min': z.number().int().min(1),
   'receipt.min_amount': z.number().int().min(0),
   'receipt.max_amount': z.number().int().min(0),
