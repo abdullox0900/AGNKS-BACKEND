@@ -178,7 +178,7 @@ describe('blocking with a reason', () => {
     };
     const audit = { record: jest.fn().mockResolvedValue(undefined) };
     const notifications = { enqueue: jest.fn().mockResolvedValue(undefined) };
-    return { service: new AdminClientsService(prisma, {} as never, audit as never, notifications as never), prisma, audit, notifications };
+    return { service: new AdminClientsService(prisma, {} as never, audit as never, notifications as never, { urlFor: () => null } as never), prisma, audit, notifications };
   }
 
   it('stores the reason, tells the client, and refuses a block without one', async () => {

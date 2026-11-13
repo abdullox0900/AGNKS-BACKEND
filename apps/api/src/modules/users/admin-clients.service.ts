@@ -1,3 +1,4 @@
+import { ClientPhotoService } from './client-photo.service';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AppError } from '@agnks/types';
@@ -24,6 +25,7 @@ export class AdminClientsService {
     private readonly ledger: LedgerService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly photos: ClientPhotoService,
   ) {}
 
   async search(q?: string, cursor?: string, limit = 20) {
@@ -109,6 +111,7 @@ export class AdminClientsService {
         registeredAt: u.registeredAt ?? u.createdAt,
         lastSeenAt: u.lastSeenAt,
         activeDays: daysOf.get(u.id) ?? 0,
+        photoUrl: this.photos.urlFor(u.id, u.tgUserId !== null),
       })),
     };
   }
@@ -153,6 +156,7 @@ export class AdminClientsService {
         registeredAt: user.registeredAt,
         createdAt: user.createdAt,
         telegramLinked: user.tgUserId !== null,
+        photoUrl: this.photos.urlFor(user.id, user.tgUserId !== null),
         marketingOptIn: !!marketing && !marketing.revokedAt,
       },
       card: {

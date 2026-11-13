@@ -1,3 +1,5 @@
+import { ClientPhotoController } from './client-photo.controller';
+import { ClientPhotoService } from './client-photo.service';
 import { Module } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { StaffService } from './staff.service';
@@ -13,8 +15,8 @@ import { NotificationsModule } from '@/modules/notifications/notifications.modul
 
 @Module({
   imports: [RulesModule, AuditModule, AuthModule, LedgerModule, NotificationsModule],
-  controllers: [ClientMeController, StaffController, AdminClientsController],
-  providers: [UsersService, StaffService, AdminClientsService],
+  controllers: [ClientMeController, StaffController, AdminClientsController, ClientPhotoController],
+  providers: [UsersService, StaffService, AdminClientsService, ClientPhotoService],
   exports: [UsersService, StaffService],
 })
 export class UsersModule {}

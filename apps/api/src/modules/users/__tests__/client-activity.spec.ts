@@ -55,7 +55,7 @@ describe('AdminClientsService.page / stats', () => {
         ),
       },
     };
-    return { service: new AdminClientsService(prisma as never, {} as never, {} as never, {} as never), prisma };
+    return { service: new AdminClientsService(prisma as never, {} as never, {} as never, {} as never, { urlFor: () => null } as never), prisma };
   }
 
   it('returns 40 per page by default, newest balance first, with active days', async () => {
