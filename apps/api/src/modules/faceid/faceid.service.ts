@@ -51,10 +51,18 @@ export interface FaceRecord {
   now?: boolean;
   /** today, and the branch terminal is silent: nothing is known about this person yet */
   blind?: boolean;
+  /** camera snapshots taken by the terminal at the first scan-in / last scan-out of the day */
+  inPhoto?: string;
+  outPhoto?: string;
 }
 export interface FaceNote {
   reason: string | null;
   note: string | null;
+}
+
+interface URootEvents {
+  total: number;
+  items: { id: string; employee: { id: string } | null; snapshotUrl: string | null }[];
 }
 
 const MAX_CHUNK_DAYS = 62;
@@ -131,11 +139,20 @@ export class FaceidService {
   /** One day for every active employee, with "now / pending / blind" known for today. */
   async day(date: string) {
     const today = todayTashkent();
-    const [att, emps, notes] = await Promise.all([
+    const [att, emps, notes, events] = await Promise.all([
       this.client.get<UAttendance>('attendance', { date }, date === today ? 15_000 : 10 * 60_000),
       this.employeesRaw(),
       this.notesFor(date, date),
+      this.events(date).catch(() => []),
     ]);
+    // first scan-in and last scan-out photo of each person (events come newest first)
+    const inPhoto = new Map<string, string>();
+    const outPhoto = new Map<string, string>();
+    for (const e of events) {
+      if (!e.photo) continue;
+      if (e.kind === 'in') inPhoto.set(e.employeeId, e.photo);
+      else if (!outPhoto.has(e.employeeId)) outPhoto.set(e.employeeId, e.photo);
+    }
     const start = new Map(emps.map((e) => [e.id, e.schedule?.start]));
     const records: FaceRecord[] = att.items.map((it) => {
       const id = it.employee.id;
@@ -161,6 +178,8 @@ export class FaceidService {
         ...(worked !== undefined ? { worked } : {}),
         ...(now ? { now: true } : {}),
         ...(blind ? { blind: true } : {}),
+        ...(inPhoto.has(id) ? { inPhoto: inPhoto.get(id) } : {}),
+        ...(outPhoto.has(id) ? { outPhoto: outPhoto.get(id) } : {}),
       };
     });
     return { date, records, notes };
@@ -202,10 +221,26 @@ export class FaceidService {
   }
 
   async events(date: string) {
-    const res = await this.client.get<UEvents>('attendance/events', { date, limit: 500 }, date === todayTashkent() ? 15_000 : 10 * 60_000);
+    const ttl = date === todayTashkent() ? 15_000 : 10 * 60_000;
+    const [res, photos] = await Promise.all([this.client.get<UEvents>('attendance/events', { date, limit: 500 }, ttl), this.snapshots(date, ttl)]);
     return res.items
       .filter((e) => e.employeeId && (e.kind === 'in' || e.kind === 'out'))
-      .map((e) => ({ id: e.id, employeeId: e.employeeId as string, kind: e.kind as 'in' | 'out', time: hhmm(e.at) ?? '', branchId: e.branch.id }));
+      .map((e) => ({ id: e.id, employeeId: e.employeeId as string, kind: e.kind as 'in' | 'out', time: hhmm(e.at) ?? '', branchId: e.branch.id, photo: photos.get(e.id) ?? null }));
+  }
+
+  /** event id → absolute URL of the terminal's camera snapshot. Needs the full-access key; otherwise just none. */
+  private async snapshots(date: string, ttl: number): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    try {
+      for (let page = 1; page <= 5; page++) {
+        const res = await this.client.get<URootEvents>('attendance/events', { date, page, pageSize: 200 }, ttl, true);
+        for (const e of res.items) if (e.snapshotUrl) out.set(e.id, e.snapshotUrl.startsWith('http') ? e.snapshotUrl : `${this.client.origin}${e.snapshotUrl}`);
+        if (!res.items.length || page * 200 >= res.total) break;
+      }
+    } catch {
+      // read-only key or TimeFace hiccup: no snapshots, the screens fall back to the profile photo
+    }
+    return out;
   }
 
   // ---------- notes ----------
