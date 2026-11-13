@@ -21,14 +21,19 @@ export class FaceidClient {
   private get key(): string {
     return (this.config.get<string>('FACEID_API_KEY', '') ?? '').trim();
   }
+  /** where TimeFace serves files (employee photos) from */
+  get origin(): string {
+    return new URL(this.baseUrl).origin;
+  }
   get configured(): boolean {
     return this.key.length > 0;
   }
 
-  async get<T>(path: string, query: Record<string, string | number | undefined> = {}, ttlMs = 15_000): Promise<T> {
+  /** `root: true` reads TimeFace's own (non-public) API — only a full-access key may; a read-only key gets 401/403 there. */
+  async get<T>(path: string, query: Record<string, string | number | undefined> = {}, ttlMs = 15_000, root = false): Promise<T> {
     if (!this.configured) throw new AppError('FACEID_NOT_CONFIGURED');
     const qs = new URLSearchParams(Object.entries(query).flatMap(([k, v]) => (v === undefined || v === '' ? [] : [[k, String(v)]]))).toString();
-    const url = `${this.baseUrl}/${path}${qs ? `?${qs}` : ''}`;
+    const url = `${root ? this.baseUrl.replace(/\/public$/, '') : this.baseUrl}/${path}${qs ? `?${qs}` : ''}`;
 
     const hit = this.cache.get(url);
     if (hit && Date.now() - hit.at < ttlMs) return hit.value as T;

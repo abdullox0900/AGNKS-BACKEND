@@ -94,8 +94,25 @@ export class FaceidService {
     return (await this.client.get<{ items: UEmployee[] }>('employees', { active: 'true' }, 5 * 60_000)).items;
   }
 
+  /** employee id → absolute photo URL. Photos need the full-access key; without it (or on any error) there are simply none. */
+  private async photos(): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    try {
+      for (let page = 1; page <= 20; page++) {
+        const res = await this.client.get<{ total: number; items: { id: string; photoUrl?: string | null }[] }>('employees', { page, pageSize: 100 }, 10 * 60_000, true);
+        for (const e of res.items) if (e.photoUrl) out.set(e.id, e.photoUrl.startsWith('http') ? e.photoUrl : `${this.client.origin}${e.photoUrl}`);
+        if (!res.items.length || page * 100 >= res.total) break;
+      }
+    } catch {
+      // read-only key or TimeFace hiccup: the screens fall back to initials
+    }
+    return out;
+  }
+
   async employees() {
+    const photos = await this.photos();
     return (await this.employeesRaw()).map((e) => ({
+      photo: photos.get(e.id) ?? null,
       id: e.id,
       name: e.fullName,
       position: e.position ?? '',
