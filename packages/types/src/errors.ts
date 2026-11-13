@@ -16,6 +16,10 @@ export const ERROR_CODES = [
   'RECEIPT_EXPIRED',
   /** the client already scanned the allowed number of receipts today (setting `receipt.daily_limit`) */
   'RECEIPT_DAILY_LIMIT',
+  /** FaceID (TimeFace) API key / url is not set on this server */
+  'FACEID_NOT_CONFIGURED',
+  /** TimeFace did not answer or refused the key */
+  'FACEID_UNAVAILABLE',
   'RECEIPT_TIME_INVALID',
   'RECEIPT_AMOUNT_OUT_OF_RANGE',
   'RECEIPT_PHOTO_REQUIRED',
@@ -56,6 +60,8 @@ export const ERROR_HTTP_STATUS: Record<ErrorCode, number> = {
   RECEIPT_ALREADY_USED: 409,
   RECEIPT_EXPIRED: 422,
   RECEIPT_DAILY_LIMIT: 422,
+  FACEID_NOT_CONFIGURED: 503,
+  FACEID_UNAVAILABLE: 502,
   RECEIPT_TIME_INVALID: 422,
   RECEIPT_AMOUNT_OUT_OF_RANGE: 422,
   RECEIPT_PHOTO_REQUIRED: 422,

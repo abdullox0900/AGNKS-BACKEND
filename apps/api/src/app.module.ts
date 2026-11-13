@@ -33,6 +33,7 @@ import { AuditModule } from '@/modules/audit/audit.module';
 import { BotModule } from '@/modules/bot/bot.module';
 import { BroadcastsModule } from '@/modules/broadcasts/broadcasts.module';
 import { ChangelogModule } from '@/modules/changelog/changelog.module';
+import { FaceidModule } from '@/modules/faceid/faceid.module';
 import { ReferralsModule } from '@/modules/referrals/referrals.module';
 import { HealthController } from '@/modules/health/health.controller';
 
@@ -64,6 +65,7 @@ import { HealthController } from '@/modules/health/health.controller';
     BotModule,
     BroadcastsModule,
     ChangelogModule,
+    FaceidModule,
     ReferralsModule,
   ],
   controllers: [HealthController],

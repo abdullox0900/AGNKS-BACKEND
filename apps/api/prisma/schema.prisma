@@ -668,3 +668,20 @@ model Broadcast {
   @@index([promotionId])
   @@map("broadcasts")
 }
+
+/// FaceID (TimeFace) day notes: why a late / absent day happened, written by a manager here. The attendance itself lives in TimeFace.
+model FaceidNote {
+  /// TimeFace employee id
+  employeeId String   @map("employee_id")
+  /// local calendar day, YYYY-MM-DD
+  date       String
+  /// sick | leave | none | trip | other
+  reason     String?
+  note       String?
+  updatedBy  String   @map("updated_by")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@id([employeeId, date])
+  @@index([date])
+  @@map("faceid_notes")
+}
