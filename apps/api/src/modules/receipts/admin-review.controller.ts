@@ -1,3 +1,4 @@
+import { ClientPhotoService } from '@/modules/users/client-photo.service';
 import { Body, Controller, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import {
   autoReviewSettingsSchema,
@@ -25,13 +26,17 @@ export class AdminReviewController {
   constructor(
     private readonly receipts: ReceiptsService,
     private readonly autoReview: AutoReviewService,
+    private readonly photos: ClientPhotoService,
   ) {}
 
   @Get()
   async list(@Query('cursor') cursor?: string) {
     const { items, nextCursor } = await this.receipts.listPendingReview(cursor);
     // each item carries the soliq.uz link so the reviewer can open the fiscal receipt straight from the queue
-    return { items: items.map((r) => ({ ...r, soliqLink: this.receipts.soliqLink(r) })), nextCursor };
+    return {
+      items: items.map((r) => ({ ...r, soliqLink: this.receipts.soliqLink(r), clientPhotoUrl: r.card?.user ? this.photos.urlFor(r.card.user.id, r.card.user.tgUserId !== null) : null })),
+      nextCursor,
+    };
   }
 
   /** Already-decided receipts with who decided — a branch manager sees only their own station. */

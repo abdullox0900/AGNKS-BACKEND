@@ -1,3 +1,4 @@
+import { ClientPhotoModule } from '@/modules/users/client-photo.module';
 import { AdminLargeReceiptsController } from './admin-large-receipts.controller';
 import { Module } from '@nestjs/common';
 import { ReceiptsService } from './receipts.service';
@@ -14,7 +15,7 @@ import { AuthModule } from '@/modules/auth/auth.module';
 import { AuditModule } from '@/modules/audit/audit.module';
 
 @Module({
-  imports: [LedgerModule, RulesModule, NotificationsModule, AuthModule, AuditModule],
+  imports: [LedgerModule, RulesModule, NotificationsModule, AuthModule, AuditModule, ClientPhotoModule],
   controllers: [ReceiptsController, AdminReviewController, AdminLargeReceiptsController, AdminClientReceiptController],
   providers: [ReceiptsService, SoliqFetchService, HistoryService, AutoReviewService],
   exports: [ReceiptsService, HistoryService, AutoReviewService],
